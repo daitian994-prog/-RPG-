@@ -1,0 +1,14 @@
+.association-groups{display:grid;gap:7px;margin-top:14px;padding:11px;border:1px solid #26373d;border-radius:9px;background:#0a1216aa}
+.association-groups>div{display:grid;grid-template-columns:58px minmax(0,1fr);gap:8px;align-items:start}
+.association-groups b{padding-top:4px;color:#82949a;font-size:9px;font-weight:600}
+.association-groups>div>span{display:flex;flex-wrap:wrap;gap:5px}
+.association-groups i{padding:3px 6px;border:1px solid #35514e;border-radius:10px;background:#142522;color:#b9d8d3;font-size:9px;font-style:normal}
+.association-groups em{padding-top:3px;color:#586970;font-size:9px;font-style:normal}
+.map-coordinate-legend{position:absolute;z-index:3;left:12px;bottom:10px;display:flex;gap:13px;padding:6px 8px;border-radius:6px;background:#071013bb;color:#a4b3b6;font-size:8px}
+.map-coordinate-legend span{display:flex;align-items:center;gap:5px}.map-coordinate-legend i{width:8px;height:8px;border:2px solid #6fc9bc;border-radius:50%}
+.map-coordinate-legend span:first-child i{border-color:#f0d598;background:#d3ad62}
+.map-coordinate-legend span:last-child i{border-style:dashed;background:#143d3966}
+.map-pin-button.estimated i{border-color:#79d1c4;background:#143d39;box-shadow:0 0 0 5px #07101299,0 0 16px #4ecbbb66}
+.map-pin-button.official i{border-color:#ffe3a4;background:#d3ad62;box-shadow:0 0 0 5px #07101299,0 0 18px #dfbc6e}
+.timeline-copy .association-groups{margin-top:12px}.timeline-copy .association-groups>div{grid-template-columns:52px minmax(0,1fr)}
+@media(max-width:800px){.map-coordinate-legend{bottom:28px;flex-direction:column;gap:4px}.association-groups>div{grid-template-columns:54px minmax(0,1fr)}}

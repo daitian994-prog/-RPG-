@@ -1,0 +1,16 @@
+[
+  {"id":"ionian_archipelago","name":"初生之土群岛","type":"区域","summary":"由多个结盟省份和岛屿构成，周围海域危险。各地文化、生态与政治传统差异显著。","tags":["群岛","省份","海岸"],"source_ids":["ionia_region_official"]},
+  {"id":"navori","name":"纳沃利","type":"中央省份","summary":"艾欧尼亚中心区域，普雷西典所在地，也是入侵、抵抗和战后政治分裂的核心。艾瑞莉娅、辛德拉与瑟提的经历均与此地相关。","champions":["irelia","syndra","sett"],"tags":["政治中心","战争","村庄"],"source_ids":["ionia_region_official","irelia_official","syndra_official"]},
+  {"id":"placidium","name":"纳沃利普雷西典","type":"圣地与城市","summary":"大陆腹地最神圣的地点之一，拥有著名学派与魔法花园。诺克萨斯选择此地作为目标，反而促成艾欧尼亚民众大规模武装抵抗。","champions":["irelia","karma"],"tags":["圣地","大战","抵抗象征"],"source_ids":["ionia_region_official","irelia_official"]},
+  {"id":"bahrl","name":"巴鲁省","type":"中央省份","summary":"山地省份，无极村曾隐于其中。战争前以自然、诗性与武艺传统闻名。","champions":["master_yi","wukong"],"tags":["山地","武术"],"source_ids":["master_yi_official"]},
+  {"id":"wuju_village","name":"无极村","type":"已毁村落","summary":"无极之道的发源地。易离村参战后，诺克萨斯以炼金武器摧毁村庄，传承几乎断绝。","champions":["master_yi","wukong"],"tags":["战争遗迹","炼金污染","失落传承"],"source_ids":["master_yi_official"]},
+  {"id":"omikayalan","name":"奥米卡亚兰","aliases":["世界之心"],"type":"神圣原始森林","summary":"初生之土最古老、最神秘的森林之一，曾由瓦斯塔亚先民守护。残暴者艾翁砍倒神柳后被生命魔法永久改变。梦境之树与莉莉娅的诞生也与这片灵性生态相关。","champions":["ivern","lillia"],"tags":["原始森林","神柳","梦境","瓦斯塔亚"],"source_ids":["ivern_official","lillia_official"]},
+  {"id":"koyehn","name":"科耶恩岛","type":"西北岛屿","summary":"拥有金色海滩、季节集市、磨坊镇和著名艺术寺院。烬毁灭寺院后，惠的故乡留下巨大的心理与现实创伤。","champions":["hwei","jhin"],"tags":["艺术","岛屿","废墟"],"source_ids":["hwei_official"]},
+  {"id":"faelor","name":"法尔洛","type":"岛屿与军事要塞","summary":"辛德拉曾被带到此处学习控制魔法，随后被封入梦境之池。诺克萨斯入侵后在岛上修建要塞；辛德拉苏醒时以力量撕裂并升起部分堡垒。战后诺克萨斯再次向此地增兵。","champions":["syndra"],"tags":["岛屿","要塞","梦境之池","诺克萨斯"],"source_ids":["syndra_official","sisterhood_war_official"]},
+  {"id":"pallas","name":"帕拉斯","type":"山地村庄与寺院","summary":"暗裔弓被封在山寺下无光深井中。诺克萨斯入侵时，猎人凯和瓦尔茂为救彼此释放暗裔瓦鲁斯，三者成为同一具身体中的意志。","champions":["varus"],"tags":["暗裔封印","山寺","猎人"],"source_ids":["varus_official","ionia_region_official"]},
+  {"id":"wehle","name":"维耶之地","type":"节庆地点","summary":"与绽灵花节密切相关。生者在节日期间纪念死者，精神领域的边界也更加活跃。亚索在此重遇归来的永恩。","champions":["yasuo","yone","lillia"],"tags":["绽灵花节","亡灵","亚扎卡纳"],"source_ids":["yasuo_official","yone_official"]},
+  {"id":"shojin_monastery","name":"朔极寺院","type":"武僧寺院","summary":"修习纪律与龙之灵传统的寺院。李青从傲慢的天才成长为以自我约束承担力量的盲僧。","champions":["lee_sin"],"tags":["寺院","龙之灵","武僧"],"source_ids":["lee_sin_official"]},
+  {"id":"kinkou_temple","name":"均衡教派古寺","type":"寺院与组织旧址","summary":"慎、劫、阿卡丽和凯南共同历史的中心。战争期间，劫的追随者夺取寺院并建立影流。","champions":["shen","zed","akali","kennen","kayn"],"tags":["均衡","影流","内部分裂"],"source_ids":["ionia_region_official","zed_official"]},
+  {"id":"lasting_altar_place","name":"长存之殿","type":"山间圣殿","summary":"卡尔玛与历代化身记忆交汇之地，既是修行场所，也是战后艾欧尼亚政治和道德压力的聚焦点。","champions":["karma"],"tags":["转世","记忆","政治"],"source_ids":["remember_me_official"]},
+  {"id":"zhyun_pits","name":"纳沃利地下搏击场","type":"地下产业","summary":"诺克萨斯文化与艾欧尼亚本地社会碰撞产生的灰色地带。瑟提从受排斥的混血少年成长为掌控搏击产业的头目。","champions":["sett"],"tags":["地下搏击","黑市","混血身份"],"source_ids":["sett_official"]}
+]

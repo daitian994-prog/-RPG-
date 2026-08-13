@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>符文之地 · 后端数据管理器</title>
+  <link rel="stylesheet" href="/admin/styles.css?v=2" />
+  <link rel="stylesheet" href="/admin/lore.css?v=4" />
+  <link rel="stylesheet" href="/admin/lore-visuals.css?v=5" />
+  <link rel="stylesheet" href="/admin/source-links.css?v=4" />
+  <link rel="stylesheet" href="/admin/map-alignment.css?v=8" />
+  <link rel="stylesheet" href="/admin/associations.css?v=6" />
+</head>
+<body>
+  <main class="shell">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">RUNETERRA · DATABASE CONSOLE</p>
+        <h1>后端数据管理器</h1>
+        <p class="subtitle">统一维护 AI 接口节点与艾欧尼亚世界观知识库，数据实时保存到 SQLite。</p>
+      </div>
+      <button class="primary" id="primaryAction">＋ 新建节点</button>
+    </header>
+
+    <nav class="console-tabs" aria-label="数据管理区域">
+      <button class="console-tab active" data-view="nodes"><span>接口</span>AI 节点</button>
+      <button class="console-tab" data-view="lore"><span>资料</span>世界观知识库</button>
+    </nav>
+
+    <div id="nodesView">
+      <section class="status-panel">
+        <span class="signal" id="signal"></span>
+        <div><strong id="statusTitle">正在读取状态…</strong><p id="statusText">请稍候</p></div>
+        <span class="single-badge">SQLite · 单节点运行</span>
+      </section>
+      <section class="section-head"><div><span>已保存节点</span><b id="nodeCount">0</b></div><button class="ghost" id="refreshButton">刷新</button></section>
+      <section class="grid" id="nodeGrid"></section>
+      <section class="empty" id="emptyState" hidden><div class="empty-icon">⌁</div><h2>还没有 API 节点</h2><p>新建一个节点，保存后再通过开关启用它。</p></section>
+    </div>
+
+    <div id="loreView" hidden>
+      <section class="lore-overview">
+        <div><p class="eyebrow">IONIA KNOWLEDGE BASE</p><h2>艾欧尼亚资料库</h2><p>英雄、地点、派系、历史和关系网均从数据库实时读取。</p></div>
+        <div class="lore-total"><strong id="loreTotal">0</strong><span>条资料</span></div>
+      </section>
+      <section class="lore-toolbar">
+        <div class="category-tabs" id="categoryTabs"></div>
+        <label class="search-box"><span>⌕</span><input id="loreSearch" placeholder="搜索名称、人物、地点或故事…" /></label>
+      </section>
+      <section class="lore-grid" id="loreGrid"></section>
+      <section class="empty" id="loreEmpty" hidden><div class="empty-icon">◇</div><h2>没有找到资料</h2><p>换一个关键词，或在当前分类新建记录。</p></section>
+    </div>
+  </main>
+
+  <dialog id="nodeDialog"><form id="nodeForm">
+    <div class="dialog-head"><div><p class="eyebrow">NODE CONFIG</p><h2 id="dialogTitle">新建节点</h2></div><button type="button" class="icon-button" id="closeButton" aria-label="关闭">×</button></div>
+    <input type="hidden" id="nodeId" />
+    <label>节点名称<input id="name" required maxlength="60" placeholder="例如：DeepSeek 主线路" /></label>
+    <div class="two-col"><label>接口类型<select id="provider"><option value="deepseek">DeepSeek</option><option value="openai_compatible">OpenAI 兼容</option></select></label><label>模型名称<input id="model" required value="deepseek-v4-flash" /></label></div>
+    <label>Base URL<input id="baseUrl" type="url" required value="https://api.deepseek.com" /></label>
+    <label>API 密钥<input id="apiKey" type="password" autocomplete="new-password" placeholder="编辑时留空表示保留原密钥" /></label>
+    <p class="security-note">密钥只保存在后端；页面和接口不会读取完整内容。</p>
+    <div class="dialog-actions"><button type="button" class="ghost" id="cancelButton">取消</button><button type="submit" class="primary" id="saveButton">保存节点</button></div>
+  </form></dialog>
+
+  <dialog id="officialLoreDialog" class="official-dialog">
+    <div class="dialog-head"><div><p class="eyebrow">OFFICIAL ZH_CN SNAPSHOT</p><h2 id="officialLoreTitle">中文官网原文</h2><p id="officialLoreMeta"></p></div><button type="button" class="icon-button" id="officialLoreClose" aria-label="关闭">×</button></div>
+    <img id="officialLoreImage" class="official-hero" alt="中文官网官方图片" hidden />
+    <section><h3 id="officialLoreShortLabel">内容简介</h3><p id="officialLoreShort"></p></section>
+    <section><h3 id="officialLoreFullLabel">正文内容</h3><p id="officialLoreFull" class="official-full"></p></section>
+    <section><h3 id="officialLoreModulesLabel">相关资料</h3><ul id="officialLoreModules" class="official-modules"></ul></section>
+    <div class="dialog-actions"><a id="officialLoreSource" class="ghost official-source-button" target="_blank" rel="noreferrer">打开中文官网来源</a><button type="button" class="primary" onclick="document.querySelector('#officialLoreDialog').close()">关闭</button></div>
+  </dialog>
+
+  <dialog id="loreDialog"><form id="loreForm">
+    <div class="dialog-head"><div><p class="eyebrow">LORE DATABASE RECORD</p><h2 id="loreDialogTitle">编辑知识记录</h2></div><button type="button" class="icon-button" id="loreCloseButton" aria-label="关闭">×</button></div>
+    <div class="two-col"><label>分类<select id="loreCategory"></select></label><label>记录 ID<input id="loreId" required maxlength="100" pattern="[a-zA-Z0-9_-]+" /></label></div>
+    <label>显示名称<input id="loreTitle" required maxlength="160" /></label>
+    <label>结构化资料（JSON）<textarea id="loreData" required spellcheck="false"></textarea></label>
+    <p class="security-note">保存后，事件生成器下一次检索就会读取新内容。请保留 source_ids 以便追溯来源。</p>
+    <div class="dialog-actions"><button type="button" class="ghost" id="loreCancelButton">取消</button><button type="submit" class="primary" id="loreSaveButton">保存资料</button></div>
+  </form></dialog>
+
+  <div class="toast" id="toast"></div>
+  <script src="/admin/lore-visuals.js?v=13"></script>
+  <script src="/admin/app.js?v=11"></script>
+</body>
+</html>

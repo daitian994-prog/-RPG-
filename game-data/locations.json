@@ -1,0 +1,6 @@
+[
+  {"id":"pallas","name":"帕拉斯","subtitle":"山寺的钟声落进炊烟","description":"艾欧尼亚山地间现存的小村落，古寺、猎人与药田共享同一条山路，并仍保留着诺克萨斯入侵的伤痕。","icon":"village","map_position":{"mode":"point","x":1674,"y":993,"space":"riot_texture_2048","official":true,"official_pin_slug":"temple-pallas","precision":"Riot 官方互动地图“Temple of Pallas”锚点"}},
+  {"id":"windbreak","name":"断风森林","subtitle":"风在这里失去声音","description":"古木彼此缠绕，林中灵息会回应旅人的念头。","icon":"forest","map_position":{"mode":"unlocated","official":false,"precision":"章节探索地点，Riot 官方地图未公开精确坐标"}},
+  {"id":"war_ruins","name":"战争遗迹","subtitle":"锈刃仍记得旧主","description":"诺克萨斯入侵留下的断墙，拾荒者和野兽都在阴影里活动。","icon":"ruins","map_position":{"mode":"unlocated","official":false,"precision":"章节探索地点，Riot 官方地图未公开精确坐标"}},
+  {"id":"mountain_temple","name":"山间寺庙","subtitle":"石阶通向云与寂静","description":"僧人守护着一口映不出人脸的古井。","icon":"temple","map_position":{"mode":"unlocated","official":false,"precision":"章节探索地点，Riot 官方地图未公开精确坐标"}}
+]
