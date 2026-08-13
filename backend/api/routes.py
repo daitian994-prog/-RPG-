@@ -4,7 +4,7 @@ import logging
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
-from backend.models.schemas import ChoiceRequest, DialogueRequest, EventNarrativeRequest, NewGameRequest, RecoveryRequest, TravelRequest
+from backend.models.schemas import ChoiceRequest, DialogueRequest, EventNarrativeRequest, NewGameRequest, RecoveryRequest, TravelRequest, WorldThreadInterventionRequest
 from backend.services.game_service import GameService
 
 router = APIRouter(prefix="/api")
@@ -97,6 +97,15 @@ def recover(payload: RecoveryRequest):
     try:
         game, recovery = service.recover(payload.game_id, payload.method)
         return {"game": game, "recovery": recovery, "message": game["log"][-1]}
+    except (KeyError, ValueError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.post("/world-threads/intervene")
+def intervene_world_thread(payload: WorldThreadInterventionRequest):
+    try:
+        game, intervention = service.intervene_world_thread(payload.game_id, payload.thread_id, payload.strategy)
+        return {"game": game, "intervention": intervention}
     except (KeyError, ValueError) as exc:
         raise HTTPException(400, str(exc)) from exc
 

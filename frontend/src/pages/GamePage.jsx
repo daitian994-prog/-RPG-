@@ -8,7 +8,7 @@ const personalityNames = {peace:'和平倾向',power:'力量观',freedom:'自由
 const fateNames = {guardian:'守护命运',strong:'强者命运',wanderer:'流浪命运',spirit:'灵界命运',breaker:'破局命运'}
 const locationIcons = { village: Leaf, forest: Compass, ruins: Sword, temple: Sparkles }
 
-export default function GamePage({ game, world, event, result, tab, busy, eventState, onTab, onTravel, onRecover, onChoice, onDialogue, onCloseEvent }) {
+export default function GamePage({ game, world, event, result, tab, busy, eventState, onTab, onTravel, onRecover, onInterveneThread, onChoice, onDialogue, onCloseEvent }) {
   const location = world.locations.find(x => x.id === game.location)
   const localNpcs = world.npcs.filter(n => n.location === game.location || n.id === 'companion')
   return <main className="game-page page-enter">
@@ -17,7 +17,7 @@ export default function GamePage({ game, world, event, result, tab, busy, eventS
       {tab === 'story' && <Story game={game} location={location} result={result} npcs={world.npcs} onMap={() => onTab('map')}/>} 
       {tab === 'map' && <WorldMap locations={world.locations} mapPlaces={world.map_places || []} current={game.location} points={game.action_points} time={game.time} chapterComplete={game.chapter_complete} bodyCondition={game.player.bodyCondition} busy={busy} onTravel={onTravel} onRecover={onRecover}/>}
       {tab === 'people' && <People npcs={localNpcs} relationships={game.relationships} onDialogue={onDialogue}/>} 
-      {tab === 'status' && <Status player={game.player} game={game}/>} 
+      {tab === 'status' && <Status player={game.player} game={game} busy={busy} onInterveneThread={onInterveneThread}/>}
     </section>
     <BottomNav active={tab} onChange={onTab}/>
     {event && <EventSheet event={event} busy={busy} eventState={eventState} onChoice={onChoice} onClose={onCloseEvent}/>} 
@@ -31,6 +31,7 @@ function Story({ game, location, result, npcs, onMap }) {
     <div className="scene-art"><div className="scene-moon"/><div className="scene-ridge"/><span>{location.subtitle}</span></div>
     <div className="chapter-title"><span>{game.chapter_complete ? '第一章 · 完' : `第一章 · ${game.time.total_actions} / ${game.time.chapter_limit}`}</span><h3>{game.chapter_complete ? '血旗落下之后' : '风从帕拉斯吹来'}</h3></div>
     <article><Scroll size={18}/><div className="narrative-copy">{String(latest).split('\n\n').map((p,i) => <p key={i}>{p}</p>)}</div></article>
+    <WorldSignals signals={game.latestWorldSignals || []}/>
     {resolution && <ResolutionPanel resolution={resolution} npcs={npcs}/>} 
     {game.chapter_complete ? <div className="milestone chapter-end"><Shield size={18}/><div><b>第一章完成 · 一年之约</b><span>帕拉斯的入侵已经结束，你的名字留在了村庄记忆里。</span></div></div> : game.battle_complete && <div className="milestone"><Shield size={18}/><div><b>旅途印记 · 初战</b><span>你已经历一次真正的战斗。故事仍在继续。</span></div></div>}
     <button className="next-action" onClick={onMap}><span><Compass size={19}/>选择下一次行动</span><ChevronRight/></button>
@@ -103,7 +104,7 @@ function People({ npcs, relationships, onDialogue }) {
   return <div className="people-view"><div className="section-heading"><p>相逢并非偶然</p><h3>旅途中认识的人</h3></div><div className="npc-list">{npcs.map(npc => { const rel = relationships[npc.id]; return <button key={npc.id} onClick={() => onDialogue(npc.id)}><span className="npc-avatar"><CircleUserRound/></span><div><b>{npc.name}</b><small>{npc.job} · {npc.personality}</small><em>{rel.memories.length ? rel.memories.at(-1) : '你们尚未留下共同记忆'}</em></div><i>{rel.score > 10 ? '信任' : rel.score > 0 ? '相识' : '陌生'} · {rel.score}</i></button> })}</div></div>
 }
 
-function Status({ player, game }) {
+function Status({ player, game, busy, onInterveneThread }) {
   return <div className="status-view"><div className="section-heading"><p>普通人的传说</p><h3>{player.name}的人物档案</h3></div>
     <div className="profile-card"><span>{player.age}</span><div><b>{player.family}</b><small>{player.birthplace}</small></div></div>
     <h4>第一章时间轴 <small>一年 · 四季 · 每季3次行动</small></h4><SeasonTimeline time={game.time} complete={game.chapter_complete}/>
@@ -111,12 +112,32 @@ function Status({ player, game }) {
     <div className="effect-list">{player.statuses?.length ? player.statuses.map(item=><span key={item.id || item.name}>状态 · {item.name} · {item.duration ?? '条件解除'}</span>) : <small>没有临时状态</small>}{player.traits?.map(item=><span key={item.id}>特质 · {item.name} Lv.{item.level}</span>)}</div>
     <h4>核心能力 <small>决定你能不能做到</small></h4><div className="core-stat-grid">{Object.entries(player.coreAbilities || {}).map(([key,value])=><div key={key}><span>{coreAttributeNames[key]}</span><b>{value}</b></div>)}</div>
     <h4>线索</h4><div className="effect-list">{player.clues?.length ? player.clues.map(item=><span key={item.name}>{item.name}</span>) : <small>尚未掌握可用于检定的线索</small>}</div>
+    <WorldThreads worldState={game.worldState} busy={busy} onInterveneThread={onInterveneThread}/>
     <h4>人格倾向 <small>描述你倾向怎么做</small></h4><div className="value-bars">{Object.entries(player.personality).map(([key,value]) => <ValueBar key={key} label={personalityNames[key]} value={value}/>)}</div>
     <h4>命运倾向 <small>影响你更容易与哪些类型的故事发生联系</small></h4><div className="value-bars fate-bars">{Object.entries(player.fateAffinities).map(([key,value]) => <ValueBar key={key} label={fateNames[key]} value={value}/>)}</div>
     <h4>持有物 <small>在适用情境中提供帮助</small></h4><div className="inventory-cards">{player.inventory.map(item => <div key={item.name}><header><b>{item.name}</b><span>{item.rarity}</span></header><p>{item.description}</p>{item.effects?.length > 0 && <footer>{item.effects.map(effect => <em key={effect}>{effect}</em>)}</footer>}</div>)}</div>
     <h4>旅途印记</h4><div className="memory-count"><Scroll/><div><b>{player.memories.length} 段经历</b><span>去过 {game.visited.length} 个地方 · 遇见 {game.completed_events.length} 次选择</span></div></div>
   </div>
 }
+
+function WorldSignals({ signals }) {
+  const visible = signals.filter(signal => signal.observed || signal.forcedOpportunity)
+  if (!visible.length) return null
+  return <section className="world-signals"><header>世界征兆</header>{visible.map((signal,index)=><div className={signal.level} key={`${signal.threadId}-${index}`}><b>{signal.level === 'urgent' ? '紧迫变化' : '你注意到'}</b><p>{signal.text}</p></div>)}</section>
+}
+
+function WorldThreads({ worldState, busy, onInterveneThread }) {
+  if (!worldState) return null
+  const known = worldState.activeThreads.filter(thread => thread.awareness >= 20 || thread.resolved)
+  const awarenessLabel = value => value < 40 ? '模糊传闻' : value < 60 ? '确认存在' : value < 80 ? '了解危机' : '迫在眉睫'
+  return <>
+    <h4>世界动态 <small>世界不会等待玩家</small></h4>
+    <div className="world-thread-list">{known.length ? known.map(thread=><article className={thread.interventionWindow.toLowerCase()} key={thread.id}><header><div><span>{thread.resolved ? '已形成世界结果' : awarenessLabel(thread.awareness)}</span><b>{thread.title}</b></div><em>{thread.interventionWindow === 'OPEN' ? '仍可介入' : thread.interventionWindow === 'CLOSING' ? '机会缩小' : '主要结果已定'}</em></header><p>{thread.resolved ? thread.resolvedOutcome.label : thread.awarenessSignals.filter(item=>item.stage<=thread.stage).at(-1)?.text || '你只听到一些尚无法确认的说法。'}</p>{!thread.resolved && <footer><button disabled={busy || gameActionUnavailable(thread)} onClick={()=>onInterveneThread(thread.id,'investigate')}>调查线索 · 1</button><button disabled={busy || thread.awareness < 40 || thread.interventionWindow === 'CLOSED'} onClick={()=>onInterveneThread(thread.id,'intervene')}>主动介入 · 1</button></footer>}</article>) : <small>尚未察觉足以辨认的世界动向</small>}</div>
+    <h4>世界线程 Debug <small>后台实时状态</small></h4><details className="world-thread-debug"><summary>展开全部线程数据</summary><div><b>World Time · {worldState.worldTime}</b><pre>{JSON.stringify(worldState, null, 2)}</pre></div></details>
+  </>
+}
+
+const gameActionUnavailable = thread => thread.interventionWindow === 'CLOSED'
 
 function ValueBar({ label, value }) { return <div className="value-bar"><header><span>{label}</span><b>{value}</b></header><i><span style={{width:`${Math.min(100,value)}%`}}/></i></div> }
 function SeasonTimeline({ time, complete }) { const seasons=['春','夏','秋','冬']; const current=Math.min(3,time.season_index); return <div className="season-timeline">{seasons.map((season,i)=><div key={i} className={`${time.total_actions >= (i+1)*3 || complete ? 'done' : ''} ${!complete && i===current ? 'current' : ''}`}><span>第一年</span><b>{season}</b><small>{Math.min(3,Math.max(0,time.total_actions-i*3))} / 3</small></div>)}</div> }

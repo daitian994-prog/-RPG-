@@ -8,6 +8,7 @@ from typing import Any
 
 from backend.database.db import init_db, load_game, save_game
 from backend.services.ai_service import AIService
+from backend.services.world_thread_service import WorldThreadService
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "game-data"
 PROJECT_VERSION = (DATA_DIR.parent / "VERSION").read_text(encoding="utf-8").strip()
@@ -36,6 +37,7 @@ class GameService:
     def __init__(self) -> None:
         init_db()
         self.ai = AIService()
+        self.world_threads = WorldThreadService()
         self.locations = self._read("locations.json")
         self.npcs = self._read("npc.json")
         self.events = self._read("events.json")
@@ -204,6 +206,8 @@ class GameService:
         if state.get("gameVersion") != PROJECT_VERSION:
             state["gameVersion"] = PROJECT_VERSION
             changed = True
+        if self.world_threads.normalize(state):
+            changed = True
         self._sync_character_layers(state)
         return changed
 
@@ -254,6 +258,7 @@ class GameService:
             "log": [birth["story"]],
             "lastRecovery": None,
             "gameVersion": PROJECT_VERSION,
+            "worldState": self.world_threads.initial_state(),
         }
         self._sync_character_layers(state)
         save_game(game_id, state)
@@ -280,6 +285,7 @@ class GameService:
             "personality": state["player"]["personality"],
             "fate": state["player"]["fateAffinities"],
             "completed": state["completed_events"], "relationships": state["relationships"],
+            "worldState": state.get("worldState", {}),
         }
         return hashlib.sha256(json.dumps(snapshot, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()[:16]
 
@@ -308,6 +314,7 @@ class GameService:
         state["last_resolution"] = None
         if location_id not in state["visited"]:
             state["visited"].append(location_id)
+        state["latestWorldSignals"] = self.world_threads.advance(state, action="travel", location=location_id)
         if state["time"]["total_actions"] >= CHAPTER_ONE_ACTIONS and not state.get("chapter_complete"):
             state["chapter_phase"] = "invasion"
             state["location"] = "pallas"
@@ -533,6 +540,7 @@ class GameService:
         player["attributes"]["hp"] += hp_gain
         state["action_points"] = max(0, state["action_points"] - 1)
         state["time"]["total_actions"] += 1
+        state["latestWorldSignals"] = self.world_threads.advance(state, action="recover", location=state["location"])
         cost = {"actionCost": 1, "resourceCost": [], "moneyCost": 0, "futureWorldTimeCost": 1, "timeCost": 1}
         recovery = {"method": method, "injuryBefore": BODY_CONDITIONS[before]["state"], "injuryAfter": BODY_CONDITIONS[player["injurySeverity"]]["state"], "clearedStatuses": cleared, "legacyHpRecovered": hp_gain, "cost": cost}
         state["lastRecovery"] = recovery
@@ -542,6 +550,21 @@ class GameService:
         self._sync_character_layers(state)
         save_game(game_id, state)
         return state, recovery
+
+    def intervene_world_thread(self, game_id: str, thread_id: str, strategy: str) -> tuple[dict[str, Any], dict[str, Any]]:
+        state = self.get(game_id)
+        if state["action_points"] <= 0:
+            raise ValueError("本季行动次数已经用完")
+        result = self.world_threads.intervene(state, thread_id, strategy)
+        state["action_points"] -= 1
+        state["time"]["total_actions"] += 1
+        state["latestWorldSignals"] = self.world_threads.advance(state, action="world_intervention", location=state["location"])
+        result["cost"] = {"actionCost": 1, "timeCost": 1}
+        state["last_resolution"] = None
+        state["player_state_version"] = int(state.get("player_state_version", 1)) + 1
+        state["log"].append(result["message"])
+        save_game(game_id, state)
+        return state, result
 
     def dialogue(self, game_id: str, npc_id: str) -> tuple[dict[str, Any], str]:
         state = self.get(game_id)

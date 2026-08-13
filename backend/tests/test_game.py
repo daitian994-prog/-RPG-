@@ -51,7 +51,19 @@ class GameLoopTest(unittest.TestCase):
         self.assertTrue(game["player"]["inventory"][0]["description"])
         self.assertNotIn("bonuses", game["player"]["inventory"][0])
         self.assertIn("effects", game["player"]["inventory"][0])
-        self.assertEqual(game["gameVersion"], "0.3.3")
+        self.assertEqual(game["gameVersion"], "0.3.4")
+
+    def test_world_thread_intervention_costs_time_and_persists(self):
+        game = self.service.new_game(["peace", "power", "freedom", "spirit", "destiny", "peace"])
+        thread = game["worldState"]["activeThreads"][0]
+        thread["awareness"] = 65
+        from backend.database.db import save_game
+        save_game(game["id"], game)
+        updated, result = self.service.intervene_world_thread(game["id"], thread["id"], "intervene")
+        self.assertEqual(result["cost"], {"actionCost": 1, "timeCost": 1})
+        self.assertEqual(updated["action_points"], 2)
+        self.assertEqual(updated["worldState"]["worldTime"], 1)
+        self.assertEqual(self.service.get(game["id"])["worldState"]["activeThreads"][0]["selectedOutcome"]["id"], "remnants_disrupted")
 
     def test_new_character_has_all_layered_schema_fields(self):
         game = self.service.new_game(["peace", "power", "freedom", "spirit", "destiny", "peace"])

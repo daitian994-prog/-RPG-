@@ -33,6 +33,12 @@ class RecoveryRequest(BaseModel):
     method: str = Field(default="rest", pattern="^(rest|supplies|treatment)$")
 
 
+class WorldThreadInterventionRequest(BaseModel):
+    game_id: str
+    thread_id: str
+    strategy: str = Field(pattern="^(investigate|intervene)$")
+
+
 class GameEnvelope(BaseModel):
     game: dict[str, Any]
     event: dict[str, Any] | None = None

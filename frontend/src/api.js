@@ -33,5 +33,6 @@ export const api = {
   streamEvent: (gameId, eventId, options) => streamNdjson('/api/events/narrative-stream', { game_id: gameId, event_id: eventId }, options),
   choose: (gameId, eventId, choiceIndex) => request('/api/choices', { method: 'POST', body: JSON.stringify({ game_id: gameId, event_id: eventId, choice_index: choiceIndex }) }),
   recover: (gameId, method = 'rest') => request('/api/recover', { method: 'POST', body: JSON.stringify({ game_id: gameId, method }) }),
+  interveneThread: (gameId, threadId, strategy) => request('/api/world-threads/intervene', { method: 'POST', body: JSON.stringify({ game_id: gameId, thread_id: threadId, strategy }) }),
   dialogue: (gameId, npcId) => request('/api/dialogue', { method: 'POST', body: JSON.stringify({ game_id: gameId, npc_id: npcId }) })
 }

@@ -1,0 +1,40 @@
+[
+  {
+    "id": "noxian_remnants",
+    "title": "诺克萨斯残军活动",
+    "maxStage": 6,
+    "urgency": 70,
+    "initialAwareness": 10,
+    "stages": ["尚未发生", "边境出现传闻", "斥候进入区域", "开始侦察村庄", "建立临时据点", "开始抓捕目标", "撤离并留下余波"],
+    "awarenessSignals": [
+      {"stage":1,"text":"商旅提到北面山道出现陌生军靴印。","locations":["pallas"],"gain":8},
+      {"stage":2,"text":"村口守卫开始核查陌生人的行囊。","locations":["pallas"],"gain":8},
+      {"stage":3,"text":"断风森林边缘发现被刻意折断的侦察标记。","locations":["windbreak"],"gain":10},
+      {"stage":4,"text":"帕拉斯开始提前关门，商人同时提高了盐和药材价格。","locations":["pallas"],"gain":12},
+      {"stage":5,"text":"有人在夜里失踪，村庄北面的火光已无法解释成普通营火。","locations":["pallas"],"gain":25},
+      {"stage":6,"text":"残军撤离路线已经形成，留下的伤痕将成为新的世界事实。","locations":["pallas"],"gain":20}
+    ],
+    "naturalOutcome":{"id":"villagers_captured","label":"数名村民被残军带走","flags":["noxian_remnants_escaped","villagers_captured"],"followUpHooks":["追踪残军","营救被俘村民"]},
+    "interventionOutcome":{"id":"remnants_disrupted","label":"残军计划被提前打乱","flags":["noxian_remnants_disrupted"],"followUpHooks":["审问落单斥候"]},
+    "worldEffects":["山道戒严","帕拉斯物价上涨","部分村民夜间不再外出"]
+  },
+  {
+    "id": "spirit_anomaly",
+    "title": "灵体异常",
+    "maxStage": 6,
+    "urgency": 52,
+    "initialAwareness": 15,
+    "stages": ["灵界平静", "动物避开旧路", "微弱灵息泄露", "梦境开始重叠", "异常扩散至聚落边缘", "灵体失去稳定形态", "异常固化并改变环境"],
+    "awarenessSignals": [
+      {"stage":1,"text":"林中的鸟群突然避开一条仍然完好的旧路。","locations":["windbreak"],"gain":8},
+      {"stage":2,"text":"井水在无风时泛起细密波纹。","locations":["mountain_temple"],"gain":8},
+      {"stage":3,"text":"几名村民梦见了同一棵不存在的树。","locations":["pallas"],"gain":10},
+      {"stage":4,"text":"黄昏后，影子偶尔会比本人晚一步移动。","locations":["pallas","windbreak"],"gain":12},
+      {"stage":5,"text":"灵体开始在白昼显形，附近居民已经无法把它当成错觉。","locations":["pallas"],"gain":25},
+      {"stage":6,"text":"异常成为土地的一部分，往后的选择只能处理它造成的新生态。","locations":["windbreak"],"gain":20}
+    ],
+    "naturalOutcome":{"id":"spirit_scar","label":"灵界异常固化为一处灵性伤痕","flags":["spirit_scar_formed"],"followUpHooks":["寻找灵性伤痕源头","与受影响灵体交涉"]},
+    "interventionOutcome":{"id":"spirit_stabilized","label":"异常被引导到远离聚落的林地","flags":["spirit_anomaly_stabilized"],"followUpHooks":["观察新生灵地"]},
+    "worldEffects":["动物迁徙路线改变","夜间梦境异常","断风森林灵息增强"]
+  }
+]
