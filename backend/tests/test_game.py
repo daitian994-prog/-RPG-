@@ -49,7 +49,9 @@ class GameLoopTest(unittest.TestCase):
         self.assertEqual(len(game["player"]["attributes"]), 9)
         self.assertEqual(len(game["player"]["fate_weights"]), 5)
         self.assertTrue(game["player"]["inventory"][0]["description"])
-        self.assertIn("bonuses", game["player"]["inventory"][0])
+        self.assertNotIn("bonuses", game["player"]["inventory"][0])
+        self.assertIn("effects", game["player"]["inventory"][0])
+        self.assertEqual(game["gameVersion"], "0.3.1")
 
     def test_new_character_has_all_layered_schema_fields(self):
         game = self.service.new_game(["peace", "power", "freedom", "spirit", "destiny", "peace"])
@@ -168,13 +170,14 @@ class GameLoopTest(unittest.TestCase):
         with patch("backend.services.ai_service.random.randint", return_value=1):
             game, resolution = self.service.resolve(game["id"], "e01", 0)
         self.assertGreater(len(resolution["narrative"]), 100)
-        self.assertTrue(resolution["changes"]["attributes"])
+        self.assertEqual(resolution["changes"]["attributes"], {})
         self.assertTrue(resolution["changes"]["personality"])
         self.assertEqual(resolution["changes"]["fate"], {})
         self.assertEqual(game["player"]["fateAffinities"], game["player"]["fate_weights"])
         self.assertEqual(resolution["items"][0]["name"], "苦叶膏")
         self.assertTrue(resolution["items"][0]["description"])
-        self.assertTrue(resolution["items"][0]["bonuses"])
+        self.assertNotIn("bonuses", resolution["items"][0])
+        self.assertTrue(resolution["items"][0]["effects"])
 
     def test_seeded_resolution_cannot_be_changed_by_refresh(self):
         game = self.service.new_game(["peace", "power", "freedom", "spirit", "destiny", "peace"])

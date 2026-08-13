@@ -10,6 +10,7 @@ from backend.database.db import init_db, load_game, save_game
 from backend.services.ai_service import AIService
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "game-data"
+PROJECT_VERSION = (DATA_DIR.parent / "VERSION").read_text(encoding="utf-8").strip()
 
 TRAIT_TO_FATE = {
     "peace": "guardian",
@@ -120,31 +121,18 @@ class GameService:
     def _item(self, name: str) -> dict[str, Any]:
         item = self.item_catalog.get(name)
         if item:
-            return {**item, "bonuses": dict(item.get("bonuses", {}))}
-        return {"name": name, "rarity": "未知", "description": "这件物品的来历尚未被记录。", "bonuses": {}}
+            return {**item, "effects": list(item.get("effects", [])), "check_bonuses": dict(item.get("check_bonuses", {}))}
+        return {"name": name, "rarity": "未知", "description": "这件物品的来历尚未被记录。", "effects": [], "check_bonuses": {}}
 
     def _apply_item_bonuses(self, player: dict[str, Any], item: dict[str, Any]) -> tuple[dict[str, int], dict[str, int]]:
-        attribute_changes: dict[str, int] = {}
-        fate_changes: dict[str, int] = {}
-        for key, value in item.get("bonuses", {}).items():
-            if key.endswith("_fate"):
-                fate_key = key.removesuffix("_fate")
-                player["fate_weights"][fate_key] += value
-                fate_changes[fate_key] = fate_changes.get(fate_key, 0) + value
-            elif key in player["attributes"]:
-                player["attributes"][key] += value
-                attribute_changes[key] = attribute_changes.get(key, 0) + value
-                if key == "max_hp":
-                    player["attributes"]["hp"] += value
-                    attribute_changes["hp"] = attribute_changes.get("hp", 0) + value
-        return attribute_changes, fate_changes
+        return {}, {}
 
     def _normalize_state(self, state: dict[str, Any]) -> bool:
         """Upgrade V1 saves in place without discarding the player's journey."""
         player = state["player"]
         changed = False
         old_inventory = player.get("inventory", [])
-        inventory_was_legacy = bool(old_inventory) and isinstance(old_inventory[0], str)
+        normalized_inventory = [self._item(item if isinstance(item, str) else item.get("name", "未知物品")) for item in old_inventory]
 
         if state.get("location") == "greenwood":
             state["location"] = "pallas"
@@ -187,10 +175,8 @@ class GameService:
         if "player_state_version" not in state:
             state["player_state_version"] = 1
             changed = True
-        if inventory_was_legacy:
-            player["inventory"] = [self._item(name) for name in old_inventory]
-            for item in player["inventory"]:
-                self._apply_item_bonuses(player, item)
+        if old_inventory != normalized_inventory:
+            player["inventory"] = normalized_inventory
             changed = True
         elif not old_inventory:
             player["inventory"] = []
@@ -214,6 +200,9 @@ class GameService:
                 state["time"]["year"] = 1
                 state["time"]["season_index"] = 3
                 state["season"] = "第一年 · 冬末"
+            changed = True
+        if state.get("gameVersion") != PROJECT_VERSION:
+            state["gameVersion"] = PROJECT_VERSION
             changed = True
         self._sync_character_layers(state)
         return changed
@@ -264,6 +253,7 @@ class GameService:
             "player_state_version": 1,
             "log": [birth["story"]],
             "lastRecovery": None,
+            "gameVersion": PROJECT_VERSION,
         }
         self._sync_character_layers(state)
         save_game(game_id, state)

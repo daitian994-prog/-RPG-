@@ -1,13 +1,11 @@
-import { Activity, ChevronRight, CircleUserRound, Compass, Gauge, Heart, Leaf, LockKeyhole, MapPin, Scroll, Shield, Sparkles, Sword, WandSparkles, X, Zap } from 'lucide-react'
+import { ChevronRight, CircleUserRound, Compass, Leaf, LockKeyhole, MapPin, Scroll, Shield, Sparkles, Sword, X } from 'lucide-react'
 import BottomNav from '../components/BottomNav'
 import PlayerHeader from '../components/PlayerHeader'
 
 const icons = { village: Leaf, forest: Compass, ruins: Sword, temple: Sparkles }
-const attributeNames = {hp:'当前生命',max_hp:'生命上限',attack:'攻击力',defense:'防御力',magic_power:'法术强度',magic_resist:'魔法抗性',attack_speed:'攻击速度',skill_haste:'技能急速',combat_xp:'战斗经验'}
 const coreAttributeNames = {martial:'武艺',physique:'体魄',perception:'灵觉',willpower:'心志',agility:'机敏',social:'交涉'}
 const personalityNames = {peace:'和平倾向',power:'力量观',freedom:'自由倾向',spirit:'灵性亲和',destiny:'命运态度'}
 const fateNames = {guardian:'守护命运',strong:'强者命运',wanderer:'流浪命运',spirit:'灵界命运',breaker:'破局命运'}
-const bonusName = key => key.endsWith('_fate') ? fateNames[key.replace('_fate','')] : attributeNames[key]
 
 export default function GamePage({ game, world, event, result, tab, busy, eventState, onTab, onTravel, onRecover, onChoice, onDialogue, onCloseEvent }) {
   const location = world.locations.find(x => x.id === game.location)
@@ -43,12 +41,10 @@ function ResolutionPanel({ resolution, npcs }) {
   const costs = resolution.costs || {attributes:{},personality:{},fate:{},relations:{}}
   const positiveOnly = values => Object.fromEntries(Object.entries(values || {}).filter(([,value]) => value > 0))
   const groups = [
-    ['基础属性收益', positiveOnly(changes.attributes), attributeNames],
     ['人格成长', positiveOnly(changes.personality), personalityNames],
     ['命运倾向', positiveOnly(changes.fate), fateNames],
   ].filter(([, values]) => Object.keys(values).length)
   const costGroups = [
-    ['基础属性损失', costs.attributes || {}, attributeNames],
     ['人格取舍', costs.personality || {}, personalityNames],
     ['命运代价', costs.fate || {}, fateNames],
   ].filter(([, values]) => Object.keys(values).length)
@@ -58,7 +54,7 @@ function ResolutionPanel({ resolution, npcs }) {
     {groups.map(([title, values, labels]) => <div className="change-group" key={title}><h5>{title}</h5><div>{Object.entries(values).map(([key, value]) => <span className={value >= 0 ? 'up' : 'down'} key={key}>{labels[key] || key}<b>{value >= 0 ? '+' : ''}{value}</b></span>)}</div></div>)}
     {Object.keys(positiveOnly(changes.relations)).length > 0 && <div className="change-group"><h5>人物关系收益</h5><div>{Object.entries(positiveOnly(changes.relations)).map(([id,value]) => <span className="up" key={id}>{npcs.find(n=>n.id===id)?.name || id}<b>+{value}</b></span>)}</div></div>}
     {costGroups.length > 0 && <div className="cost-block"><header>本次代价</header>{costGroups.map(([title, values, labels]) => <div className="change-group" key={title}><h5>{title}</h5><div>{Object.entries(values).map(([key,value]) => <span className="down" key={key}>{labels[key] || key}<b>{value}</b></span>)}</div></div>)}{Object.keys(costs.relations || {}).length > 0 && <div className="change-group"><h5>人物关系损失</h5><div>{Object.entries(costs.relations).map(([id,value]) => <span className="down" key={id}>{npcs.find(n=>n.id===id)?.name || id}<b>{value}</b></span>)}</div></div>}</div>}
-    {resolution.items?.map(item => <div className="loot-card" key={item.name}><div><span>获得物品 · {item.rarity}</span><b>{item.name}</b><p>{item.description}</p></div><ul>{Object.entries(item.bonuses).map(([key,value]) => <li key={key}>{bonusName(key)} +{value}</li>)}</ul></div>)}
+    {resolution.items?.map(item => <div className="loot-card" key={item.name}><div><span>获得物品 · {item.rarity}</span><b>{item.name}</b><p>{item.description}</p></div>{item.effects?.length > 0 && <ul>{item.effects.map(effect => <li key={effect}>{effect}</li>)}</ul>}</div>)}
     {resolution.missed_items?.length > 0 && <div className="missed-loot"><span>未能获得</span><b>{resolution.missed_items.join('、')}</b><p>这件物品随失败的机会一同离开，未来或许还有其他取得方式。</p></div>}
   </section>
 }
@@ -93,23 +89,13 @@ function Status({ player, game }) {
     <div className="effect-list">{player.statuses?.length ? player.statuses.map(item=><span key={item.id || item.name}>状态 · {item.name} · {item.duration ?? '条件解除'}</span>) : <small>没有临时状态</small>}{player.traits?.map(item=><span key={item.id}>特质 · {item.name} Lv.{item.level}</span>)}</div>
     <h4>核心能力 <small>决定你能不能做到</small></h4><div className="core-stat-grid">{Object.entries(player.coreAbilities || {}).map(([key,value])=><div key={key}><span>{coreAttributeNames[key]}</span><b>{value}</b></div>)}</div>
     <h4>线索</h4><div className="effect-list">{player.clues?.length ? player.clues.map(item=><span key={item.name}>{item.name}</span>) : <small>尚未掌握可用于检定的线索</small>}</div>
-    <h4>开发调试</h4><details className="character-debug"><summary>查看完整人物数据</summary><DebugBlock title="Core Abilities" value={player.coreAbilities}/><DebugBlock title="Personality" value={player.personality}/><DebugBlock title="Fate Affinity" value={player.fateAffinities}/><DebugBlock title="Body Condition" value={player.bodyCondition}/><DebugBlock title="Statuses" value={player.statuses}/><DebugBlock title="Traits" value={player.traits}/><DebugBlock title="Relations" value={player.relations}/><DebugBlock title="Clues" value={player.clues}/><DebugBlock title="Legacy Combat Stats" value={player.legacyCombatStats}/><DebugBlock title="Recovery Time Cost" value={game.lastRecovery?.cost || {timeCost:1,futureWorldTimeCost:1}}/></details>
-    <h4 className="legacy-heading">旧战斗属性 <small>兼容数据，仅 Debug 使用</small></h4><details className="legacy-stats"><summary>展开旧战斗数值</summary><div className="stat-grid">
-      <Stat icon={Heart} label="生命" value={`${player.attributes.hp} / ${player.attributes.max_hp}`}/>
-      <Stat icon={Sword} label="攻击力" value={player.attributes.attack}/><Stat icon={Shield} label="防御力" value={player.attributes.defense}/>
-      <Stat icon={WandSparkles} label="法术强度" value={player.attributes.magic_power}/><Stat icon={Sparkles} label="魔法抗性" value={player.attributes.magic_resist}/>
-      <Stat icon={Zap} label="攻击速度" value={player.attributes.attack_speed}/><Stat icon={Gauge} label="技能急速" value={player.attributes.skill_haste}/>
-      <Stat icon={Activity} label="战斗经验" value={player.attributes.combat_xp}/>
-    </div></details>
     <h4>人格倾向 <small>描述你倾向怎么做</small></h4><div className="value-bars">{Object.entries(player.personality).map(([key,value]) => <ValueBar key={key} label={personalityNames[key]} value={value}/>)}</div>
     <h4>命运倾向 <small>影响你更容易与哪些类型的故事发生联系</small></h4><div className="value-bars fate-bars">{Object.entries(player.fateAffinities).map(([key,value]) => <ValueBar key={key} label={fateNames[key]} value={value}/>)}</div>
-    <h4>持有物 <small>加成已计入基础属性</small></h4><div className="inventory-cards">{player.inventory.map(item => <div key={item.name}><header><b>{item.name}</b><span>{item.rarity}</span></header><p>{item.description}</p><footer>{Object.entries(item.bonuses).map(([key,value]) => <em key={key}>{bonusName(key)} +{value}</em>)}</footer></div>)}</div>
+    <h4>持有物 <small>在适用情境中提供帮助</small></h4><div className="inventory-cards">{player.inventory.map(item => <div key={item.name}><header><b>{item.name}</b><span>{item.rarity}</span></header><p>{item.description}</p>{item.effects?.length > 0 && <footer>{item.effects.map(effect => <em key={effect}>{effect}</em>)}</footer>}</div>)}</div>
     <h4>旅途印记</h4><div className="memory-count"><Scroll/><div><b>{player.memories.length} 段经历</b><span>去过 {game.visited.length} 个地方 · 遇见 {game.completed_events.length} 次选择</span></div></div>
   </div>
 }
 
-function Stat({ icon: Icon, label, value }) { return <div className="stat-cell"><Icon size={15}/><span>{label}</span><b>{value}</b></div> }
-function DebugBlock({ title, value }) { return <div><b>{title}</b><pre>{JSON.stringify(value, null, 2)}</pre></div> }
 function ValueBar({ label, value }) { return <div className="value-bar"><header><span>{label}</span><b>{value}</b></header><i><span style={{width:`${Math.min(100,value)}%`}}/></i></div> }
 function SeasonTimeline({ time, complete }) { const seasons=['春','夏','秋','冬']; const current=Math.min(3,time.season_index); return <div className="season-timeline">{seasons.map((season,i)=><div key={i} className={`${time.total_actions >= (i+1)*3 || complete ? 'done' : ''} ${!complete && i===current ? 'current' : ''}`}><span>第一年</span><b>{season}</b><small>{Math.min(3,Math.max(0,time.total_actions-i*3))} / 3</small></div>)}</div> }
 
@@ -119,7 +105,7 @@ function EventSheet({ event, busy, eventState, onChoice, onClose }) {
   return <div className="sheet-backdrop"><section className={`event-sheet ${event.type === '战斗' ? 'battle' : ''}`}>
     <div className="sheet-handle"/><button className="sheet-close" onClick={onClose}><X size={18}/></button>
     <span className="event-type"><Icon size={15}/>{event.type}事件</span><h2>{event.title}</h2>
-    {event.boss && <div className="boss-card"><span>{event.boss.title}</span><h3>{event.boss.name}</h3><p>{event.boss.description}</p><div><b>生命 {event.boss.hp}</b><b>攻击 {event.boss.attack}</b><b>防御 {event.boss.defense}</b><b>魔抗 {event.boss.magic_resist}</b></div></div>}
+    {event.boss && <div className="boss-card"><span>{event.boss.title}</span><h3>{event.boss.name}</h3><p>{event.boss.description}</p><div><b>威胁 · 致命</b><b>关键检定 · 4 个节点</b></div></div>}
     <div className={`event-copy ${event.streaming ? 'is-streaming' : ''}`} aria-live="polite">{(event.paragraphs?.length ? event.paragraphs : event.text ? event.text.split('\n\n') : []).map((p,i) => <p className="stream-paragraph" key={`${i}-${p.slice(0,12)}`}>{p}</p>)}{!event.text && <div className="world-whisper"><i/><span>{event.type === '战斗' ? '敌人正在逼近。你调整呼吸，四周逐渐安静下来。' : '风从近处掠过。某种变化正在显露轮廓。'}</span></div>}</div>
     {event.type === '战斗' && <div className="battle-warning"><Sword size={17}/><span>战斗将作为 {event.chapter_finale ? '4 个' : '2 个'}关键检定节点处理；本次选择决定当前节点局势。</span></div>}
     <div className={`event-choices ${eventState === 'CHOICES_AVAILABLE' ? 'available' : ''}`}>{event.choices.map((choice, index) => <button style={{animationDelay:`${index * .08}s`}} disabled={busy || eventState !== 'CHOICES_AVAILABLE'} onClick={() => onChoice(index)} key={choice.text}><span>{String.fromCharCode(65+index)}</span><div className="choice-copy"><b>[{choice.assessment.attribute_label}] {choice.text}</b><small>{choice.hint}</small><div className="choice-assessment"><em className={`risk-${choice.assessment.risk}`}>风险 · {choice.assessment.risk}</em><em>成功率 · {choice.assessment.final_probability}%</em>{choice.lethal && <em className="risk-致命">失败后果 · 可能死亡</em>}{choice.assessment.applied_modifiers.map((modifier,i)=><em key={i}>{modifier.label} {modifier.value>=0?'+':''}{modifier.value}{modifier.mode==='percent'?'%':''}</em>)}</div></div><ChevronRight size={18}/></button>)}</div>
