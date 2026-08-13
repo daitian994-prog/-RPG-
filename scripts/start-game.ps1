@@ -2,8 +2,10 @@ param([switch]$NoBrowser)
 
 $ErrorActionPreference = "Stop"
 $projectRoot = Split-Path -Parent $PSScriptRoot
-$gameUrl = "http://127.0.0.1:8000"
+$expectedVersion = (Get-Content -Raw -LiteralPath (Join-Path $projectRoot "VERSION")).Trim()
+$gameUrl = "http://127.0.0.1:8000/?v=$expectedVersion"
 $healthUrl = "$gameUrl/health"
+$healthUrl = "http://127.0.0.1:8000/health"
 $pidFile = Join-Path $projectRoot ".runeterra-server.json"
 
 function Find-Python {
@@ -16,11 +18,10 @@ function Find-Python {
     throw "Python was not found. Please install Python 3.10 or newer."
 }
 
-function Test-GameServer {
+function Get-GameServerHealth {
     try {
-        $result = Invoke-RestMethod -Uri $healthUrl -TimeoutSec 2
-        return $result.status -eq "ok"
-    } catch { return $false }
+        return Invoke-RestMethod -Uri $healthUrl -TimeoutSec 2
+    } catch { return $null }
 }
 
 function Open-GameBrowser {
@@ -41,10 +42,15 @@ Write-Host "  Runeterra: The Nameless" -ForegroundColor DarkYellow
 Write-Host "  Starting the game..." -ForegroundColor Gray
 Write-Host ""
 
-if (Test-GameServer) {
-    Write-Host "The game is already running. Opening it now." -ForegroundColor Green
-    Open-GameBrowser
-    exit 0
+$existingHealth = Get-GameServerHealth
+if ($existingHealth) {
+    if ($existingHealth.status -eq "ok" -and $existingHealth.version -eq $expectedVersion) {
+        Write-Host "Version $expectedVersion is already running. Opening it now." -ForegroundColor Green
+        Open-GameBrowser
+        exit 0
+    }
+    $runningVersion = if ($existingHealth.version) { $existingHealth.version } else { "unknown/legacy" }
+    throw "Port 8000 is occupied by Runeterra version $runningVersion, but this launcher requires $expectedVersion. Stop the old game server first."
 }
 
 $pythonExe = Find-Python
@@ -72,7 +78,8 @@ $serverProcess = [System.Diagnostics.Process]::Start($startInfo)
 $ready = $false
 for ($attempt = 0; $attempt -lt 30; $attempt++) {
     Start-Sleep -Milliseconds 300
-    if (Test-GameServer) { $ready = $true; break }
+    $health = Get-GameServerHealth
+    if ($health -and $health.status -eq "ok" -and $health.version -eq $expectedVersion) { $ready = $true; break }
     if ($serverProcess.HasExited) { break }
 }
 
