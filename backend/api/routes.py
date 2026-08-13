@@ -14,7 +14,17 @@ logger = logging.getLogger(__name__)
 
 @router.get("/world")
 def world():
-    return {"world": service.world, "locations": service.locations, "npcs": service.npcs}
+    map_places = [
+        {
+            "id": place["id"],
+            "name": place["name"],
+            "type": place.get("type", "地点"),
+            "map_position": place.get("map_position"),
+        }
+        for place in service.ai.lore.collection("places")
+        if place.get("map_position", {}).get("mode") in {"point", "estimated_area"}
+    ]
+    return {"world": service.world, "locations": service.locations, "map_places": map_places, "npcs": service.npcs}
 
 
 @router.post("/games")
