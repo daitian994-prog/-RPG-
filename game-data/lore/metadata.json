@@ -1,0 +1,12 @@
+{
+  "id": "ionia_official_lore_kb",
+  "title": "艾欧尼亚世界观知识库",
+  "version": "1.0.0",
+  "updated_at": "2026-08-10",
+  "language": "zh-CN",
+  "scope": "英雄联盟主宇宙中的艾欧尼亚地区；不混入皮肤平行宇宙",
+  "copyright_policy": "仅保存事实性摘要、关系和来源链接，不保存官方故事原文",
+  "chronology_policy": "官方未给出精确纪年时使用相对阶段，不推测具体年份",
+  "champion_count": 23,
+  "champion_ids": ["ahri", "akali", "hwei", "irelia", "ivern", "jhin", "karma", "kayn", "kennen", "lee_sin", "lillia", "master_yi", "rakan", "sett", "shen", "syndra", "varus", "wukong", "xayah", "yasuo", "yone", "yunara", "zed"]
+}

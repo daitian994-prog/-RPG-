@@ -1,0 +1,7 @@
+[
+  {"id":"elder","name":"闻松","age":67,"job":"村长","personality":"谨慎而慈和","goal":"让帕拉斯不再被战争卷走","location":"pallas"},
+  {"id":"healer","name":"白芷","age":31,"job":"药师","personality":"敏锐、寡言","goal":"寻找能医治灵界灼伤的药方","location":"pallas"},
+  {"id":"smith","name":"砺川","age":45,"job":"铁匠","personality":"倔强、重诺","goal":"把战争兵器重新铸成农具","location":"pallas"},
+  {"id":"hunter","name":"沉弓","age":58,"job":"老猎人","personality":"幽默、警觉","goal":"找出让森林失语的东西","location":"windbreak"},
+  {"id":"companion","name":"小满","age":17,"job":"采药学徒","personality":"好奇、直率","goal":"走出村子，看见地图之外的地方","location":"pallas"}
+]

@@ -1,0 +1,22 @@
+[
+  {"order":10,"era":"远古","title":"瓦斯塔亚先民与世界之心","summary":"瓦斯塔亚先民及其后裔与初生之土的野性魔法紧密相连；奥米卡亚兰成为最神圣的原始森林之一。","entities":["omikayalan","xayah","rakan","wukong"],"precision":"神话时代，具体年代未知","source_ids":["ionia_region_official"]},
+  {"order":20,"era":"远古","title":"暗裔瓦鲁斯被封印","summary":"暗裔战争后，瓦鲁斯的意识被封入弓中，武器最终被带到帕拉斯山寺下的无光深井封存。","entities":["varus","pallas"],"precision":"早于现代艾欧尼亚诸事件数个时代","source_ids":["varus_official"]},
+  {"order":30,"era":"远古至古代","title":"艾翁砍倒神柳","summary":"来自弗雷尔卓德的残暴征服者艾翁入侵奥米卡亚兰并砍倒神柳，生命魔法将他转化为新的森林存在；此后他成为自然生命的朋友与引导者。","entities":["ivern","omikayalan"],"precision":"极古老事件，具体年代未知","source_ids":["ivern_official"]},
+  {"order":40,"era":"漫长传统期","title":"卡尔玛转世延续","summary":"艾欧尼亚之魂通过一代代卡尔玛化身延续记忆。现任化身达尔哈必须在历代智慧和当代战争现实间作出自己的判断。","entities":["karma","lasting_altar"],"precision":"跨越多代，延续至今","source_ids":["karma_official","remember_me_official"]},
+  {"order":50,"era":"入侵前","title":"金魔烬的连环杀戮与被捕","summary":"苦说大师带领慎与劫追查‘金魔’，发现凶手是凡人卡达·烬并将其囚禁。此案奠定慎、劫、烬之间长期纠葛。","entities":["jhin","shen","zed","kusho"],"precision":"第一次诺克萨斯入侵前","source_ids":["zed_official","shen_official","jhin_official"]},
+  {"order":60,"era":"约十二年前起","title":"诺克萨斯第一次入侵艾欧尼亚","summary":"诺克萨斯大军横渡海洋进攻初生之土，摧毁聚落、建立要塞并使用炼金武器。缺乏统一军队的艾欧尼亚被迫改变。","entities":["noxian_occupation","ionia"],"precision":"官方地区页称入侵始于约十二年前","source_ids":["ionia_region_official"]},
+  {"order":70,"era":"第一次入侵期间","title":"普雷西典抗争","summary":"诺克萨斯进攻神圣的普雷西典，年轻的艾瑞莉娅以舞蹈化成的刃术成为抵抗象征；这场抗争推动各地民众正式拿起武器。","entities":["irelia","karma","placidium","swain"],"precision":"第一次入侵中期","source_ids":["ionia_region_official","irelia_official"]},
+  {"order":80,"era":"第一次入侵期间","title":"龙之灵焚敌与李青失明","summary":"李青释放龙之灵抵抗诺克萨斯，力量失控造成巨大破坏并烧毁双眼；他此后以纪律和赎罪重新理解力量。","entities":["lee_sin","shojin"],"precision":"第一次入侵期间","source_ids":["lee_sin_official"]},
+  {"order":90,"era":"第一次入侵期间","title":"无极村毁灭","summary":"易违背隐世传统参战后，诺克萨斯以炼金武器袭击无极村，绝大多数传承者死亡。易成为最后的无极大师之一。","entities":["master_yi","wuju_village","singed"],"precision":"第一次入侵期间","source_ids":["master_yi_official"]},
+  {"order":100,"era":"第一次入侵期间","title":"素马长老之死与亚索流亡","summary":"亚索擅离守卫岗位；锐雯试图打碎符文剑时意外导致素马长老死亡。亚索被误认为凶手，在追查真相过程中杀死追捕自己的兄长永恩。","entities":["yasuo","yone","riven","souma"],"precision":"第一次入侵期间","source_ids":["yasuo_official"]},
+  {"order":110,"era":"第一次入侵期间","title":"帕拉斯陷落与瓦鲁斯苏醒","summary":"凯与瓦尔茂在抵抗入侵时重伤，为救爱人进入禁地并释放暗裔弓；瓦鲁斯以二人的血肉重塑身体，三种意识由此共存和对抗。","entities":["varus","kai","valmar","pallas"],"precision":"第一次入侵期间","source_ids":["varus_official","ionia_region_official"]},
+  {"order":120,"era":"第一次入侵期间","title":"均衡与影流决裂","summary":"劫认为均衡教派的克制无法保护家园，掌握禁忌影子魔法并建立影流；影流夺取古寺，慎继承暮光之眼。","entities":["zed","shen","kennen","kinkou","shadow_order"],"precision":"第一次入侵期间及战后初期","source_ids":["ionia_region_official","zed_official"]},
+  {"order":130,"era":"战后","title":"诺克萨斯撤退与不稳定和平","summary":"诺克萨斯结束无把握的海外战争，但留下堡垒、伤痕和地方冲突。艾欧尼亚围绕和平、统一、复仇和军事化产生派系分裂。","entities":["ionia","navori_brotherhood","kinkou","shadow_order"],"precision":"第一次战争结束后","source_ids":["ionia_region_official","trifarix_proclamation_official"]},
+  {"order":140,"era":"战后","title":"阿卡丽离开均衡教派","summary":"阿卡丽尊重慎，却不接受教派的克制路线，离开后以自己的方式主动打击威胁艾欧尼亚的人。","entities":["akali","shen","kinkou"],"precision":"战后派系分裂期","source_ids":["akali_official","shen_official"]},
+  {"order":150,"era":"战后","title":"瓦斯塔亚反抗行动扩大","summary":"霞为恢复野性魔法和族群生存空间采取激进行动，洛成为她的伴侣与同盟；二人与人类组织尤其影流发生冲突。","entities":["xayah","rakan","vastaya_rebels","zed"],"precision":"战后现代期","source_ids":["xayah_official","rakan_official"]},
+  {"order":160,"era":"战后","title":"亚索洗清杀师嫌疑并重遇永恩","summary":"素马之死被确认为锐雯造成的意外。亚索仍背负擅离与杀兄之罪；绽灵花节期间，他遇见从精神领域归来、猎杀亚扎卡纳的永恩。","entities":["yasuo","yone","riven","wehle"],"precision":"战后现代期","source_ids":["yasuo_official","yone_official"]},
+  {"order":170,"era":"战后","title":"辛德拉苏醒与法尔洛破碎","summary":"长期被封在梦境之池的辛德拉在战争扰动中苏醒。面对试图利用或杀死她的人，她释放力量并升起法尔洛要塞的一部分离去。","entities":["syndra","faelor"],"precision":"战后现代期","source_ids":["syndra_official"]},
+  {"order":180,"era":"战后","title":"科耶恩寺院毁灭","summary":"烬以艺术交流诱导惠展示被压抑的魔法，随后制造围绕数字四的杀戮与爆炸。惠成为唯一幸存者并开始追寻烬与自身艺术的答案。","entities":["hwei","jhin","koyehn"],"precision":"现代期，具体相对顺序未完全公开","source_ids":["hwei_official"]},
+  {"order":190,"era":"当前威胁","title":"法尔洛再度增兵与战争阴影","summary":"诺克萨斯人员和物资再次抵达法尔洛，并追捕已经在艾欧尼亚生活的锐雯，显示第二轮大规模冲突风险。","entities":["faelor","noxian_occupation","riven"],"precision":"战后较近期","source_ids":["sisterhood_war_official"]},
+  {"order":200,"era":"当前威胁","title":"芸阿娜自精神领域归来","summary":"芸阿娜携传奇均衡遗物艾恩·厄娜修行数个世纪后面对现代艾欧尼亚；古老威胁的回归将考验她未曾动摇的信念。","entities":["yunara","kinkou"],"precision":"最新官方英雄现状","source_ids":["yunara_official"]}
+]
