@@ -104,11 +104,23 @@ export default function App() {
     catch (e) { setError(e.message) } finally { setBusy(false) }
   }
 
+  const focusWorldTopic = async (topicId, focused) => {
+    if (busy) return
+    setBusy(true); setError('')
+    try { const data = await api.focusWorldTopic(game.id, topicId, focused); setGame(data.game); setResult(data.focus.message) }
+    catch (e) { setError(e.message) } finally { setBusy(false) }
+  }
+
   return <div className="app-shell">
     {screen === 'home' && <HomePage onStart={() => setScreen('questions')}/>} 
     {screen === 'questions' && <PersonalityPage step={step} onAnswer={answer} onBack={() => step ? setStep(step-1) : setScreen('home')}/>} 
     {screen === 'birth' && game && <BirthPage game={game} onContinue={() => setScreen('game')}/>}
-    {screen === 'game' && game && world && <GamePage game={game} world={world} event={event} result={result} tab={tab} busy={busy} eventState={eventState} onTab={setTab} onTravel={travel} onRecover={recover} onInterveneThread={interveneThread} onChoice={choose} onDialogue={dialogue} onCloseEvent={() => { requestRef.current.controller?.abort(); setEvent(null); setBusy(false); setEventState('IDLE') }}/>}
+    {screen === 'game' && game && world && <GamePage
+      game={game} world={world} event={event} result={result} tab={tab} busy={busy} eventState={eventState}
+      onTab={setTab} onTravel={travel} onRecover={recover} onInterveneThread={interveneThread}
+      onFocusWorldTopic={focusWorldTopic} onChoice={choose} onDialogue={dialogue}
+      onCloseEvent={() => { requestRef.current.controller?.abort(); setEvent(null); setBusy(false); setEventState('IDLE') }}
+    />}
     {transition && <WorldTransition scene={transition}/>} 
     {error && <button className="error-toast" onClick={() => setError('')}>{error}<span>×</span></button>}
   </div>

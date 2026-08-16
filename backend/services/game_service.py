@@ -8,6 +8,7 @@ from typing import Any
 
 from backend.database.db import init_db, load_game, save_game
 from backend.services.ai_service import AIService
+from backend.services.event_director_service import EventDirectorService
 from backend.services.world_thread_service import WorldThreadService
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "game-data"
@@ -38,6 +39,7 @@ class GameService:
         init_db()
         self.ai = AIService()
         self.world_threads = WorldThreadService()
+        self.director = EventDirectorService()
         self.locations = self._read("locations.json")
         self.npcs = self._read("npc.json")
         self.events = self._read("events.json")
@@ -208,6 +210,8 @@ class GameService:
             changed = True
         if self.world_threads.normalize(state):
             changed = True
+        if self.director.normalize(state):
+            changed = True
         self._sync_character_layers(state)
         return changed
 
@@ -259,6 +263,7 @@ class GameService:
             "lastRecovery": None,
             "gameVersion": PROJECT_VERSION,
             "worldState": self.world_threads.initial_state(),
+            "directorState": self.director.initial_state(),
         }
         self._sync_character_layers(state)
         save_game(game_id, state)
@@ -286,6 +291,7 @@ class GameService:
             "fate": state["player"]["fateAffinities"],
             "completed": state["completed_events"], "relationships": state["relationships"],
             "worldState": state.get("worldState", {}),
+            "directorState": state.get("directorState", {}),
         }
         return hashlib.sha256(json.dumps(snapshot, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()[:16]
 
@@ -323,15 +329,45 @@ class GameService:
             save_game(game_id, state)
             return state, self._chapter_boss_event(state, narrate=narrate)
 
-        candidates = [e for e in self.events if not e.get("chapter_only") and location_id in e["locations"] and e["id"] not in state["completed_events"]]
-        if not candidates:
-            candidates = [e for e in self.events if not e.get("chapter_only") and location_id in e["locations"]]
-        template = random.choice(candidates)
+        selection = self.director.select(state, location_id, self.events)
+        template = self._event_template(state, selection["eventId"], selection=selection)
+        selection["directorContext"] = self.director.context(state, selection, location["name"])
+        template["director"] = selection
+        template["directorPrelude"] = selection["directorContext"]
         event = self.ai.generate_event(template, state, location, narrate=narrate)
         event["world_state_version"] = self.state_version(state)
-        event["event_seed"] = template.get("event_seed", template["id"])
+        event["event_seed"] = selection["seed"]
+        event["director"] = {key: value for key, value in selection.items() if key != "candidateWeights"}
+        state["pendingEvent"] = {
+            "id": selection["eventId"], "templateId": selection["templateId"],
+            "eventSeed": selection["seed"], "director": event["director"],
+            "directorPrelude": selection["directorContext"],
+        }
+        self.director.record_selection(state, selection)
         save_game(game_id, state)
         return state, event
+
+    def _event_template(self, state: dict[str, Any], event_id: str, *, selection: dict[str, Any] | None = None) -> dict[str, Any]:
+        pending = state.get("pendingEvent", {})
+        if selection:
+            template_id = selection["templateId"]
+            seed = selection["seed"]
+            director = selection
+            prelude = selection.get("directorContext", "")
+        elif pending.get("id") == event_id:
+            template_id = pending["templateId"]
+            seed = pending["eventSeed"]
+            director = pending.get("director", {})
+            prelude = pending.get("directorPrelude", "")
+        else:
+            template_id = event_id
+            seed = event_id
+            director = {}
+            prelude = ""
+        base = next((event for event in self.events if event["id"] == template_id), None)
+        if not base:
+            raise ValueError("事件已经消散")
+        return {**base, "id": event_id, "template_id": template_id, "event_seed": seed, "director": director, "directorPrelude": prelude}
 
     def _chapter_boss_event(self, state: dict[str, Any], *, narrate: bool = True) -> dict[str, Any]:
         template = next(event for event in self.events if event["id"] == "chapter1_boss")
@@ -345,17 +381,13 @@ class GameService:
 
     def narrate_event(self, game_id: str, event_id: str) -> str:
         state = self.get(game_id)
-        template = next((event for event in self.events if event["id"] == event_id), None)
-        if not template:
-            raise ValueError("事件已经消散")
+        template = self._event_template(state, event_id)
         location = next(location for location in self.locations if location["id"] == state["location"])
         return self.ai.narrate_event(template, state, location)
 
     def stream_event(self, game_id: str, event_id: str):
         state = self.get(game_id)
-        template = next((event for event in self.events if event["id"] == event_id), None)
-        if not template:
-            raise ValueError("事件已经消散")
+        template = self._event_template(state, event_id)
         location = next(location for location in self.locations if location["id"] == state["location"])
         return self.ai.stream_event(template, state, location)
 
@@ -371,9 +403,7 @@ class GameService:
             return state, previous
         if event_id in state.get("completed_events", []):
             raise ValueError("这个事件已经结算，不能重新选择")
-        event = next((e for e in self.events if e["id"] == event_id), None)
-        if not event:
-            raise ValueError("事件已经消散")
+        event = self._event_template(state, event_id)
         choice = event["choices"][choice_index]
         result = choice["result"]
         player = state["player"]
@@ -519,6 +549,8 @@ class GameService:
         player["memories"].append(narrative)
         state["log"].append(narrative)
         state["last_resolution"] = resolution
+        if state.get("pendingEvent", {}).get("id") == event_id:
+            state.pop("pendingEvent", None)
         state["player_state_version"] = int(state.get("player_state_version", 1)) + 1
         state.pop("check_state_version", None)
         self._sync_character_layers(state)
@@ -561,6 +593,14 @@ class GameService:
         state["latestWorldSignals"] = self.world_threads.advance(state, action="world_intervention", location=state["location"])
         result["cost"] = {"actionCost": 1, "timeCost": 1}
         state["last_resolution"] = None
+        state["player_state_version"] = int(state.get("player_state_version", 1)) + 1
+        state["log"].append(result["message"])
+        save_game(game_id, state)
+        return state, result
+
+    def focus_world_topic(self, game_id: str, topic_id: str, focused: bool) -> tuple[dict[str, Any], dict[str, Any]]:
+        state = self.get(game_id)
+        result = self.director.set_focus(state, topic_id, focused)
         state["player_state_version"] = int(state.get("player_state_version", 1)) + 1
         state["log"].append(result["message"])
         save_game(game_id, state)

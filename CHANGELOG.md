@@ -1,5 +1,15 @@
 # 更新记录
 
+## 0.3.5 — 2026-08-16
+
+- 新增程序驱动的 Event Director，将原有20个基础事件改为可重复组合的地点候选池，而非按地点直接随机抽取固定事件。
+- 建立环境、世界线程、玩家个人、英雄/特殊四类事件池，并加入 rumor、clue、encounter、aftermath、environmental、npc_report、hero_overlap、investigation、conflict、opportunity 与 personal 意图。
+- 实装地点相关性、线程阶段、紧迫度、Tension、Recent History、玩家关注、世界相关性、Narrative Budget 与 0.85—1.15 可控扰动的完整权重公式及 Seed 抽取。
+- Director只读取 WorldThread，不改变其推进职责；线程阶段、世界效果与结算后的后续钩子会作为结构化现场约束传给本地叙事和 AI Narrator。
+- 每次事件使用独立 occurrence ID，固定事件模板可以在不同阶段、地点和意图下重新承担不同叙事功能，同时保持检定与刷新防重骰。
+- 新增旅途日志与“关注此事”功能，关注提供25%相关权重提升但不会垄断事件池；人物页加入 Tension、候选权重、修正项、抽取结果和近期历史 Debug。
+- 新增连续30次探索分布测试，覆盖四类事件交错、至少10个基础模板、至少6种意图、重复抑制、稳定 Seed、关注增权和 WorldThread 只读边界。
+
 ## 0.3.4 — 2026-08-13
 
 - 新增独立持久化的 `WorldState` 与程序驱动的 `WorldThread` 推进器，世界时间随有效行动前进，不依赖玩家抽中相关事件。

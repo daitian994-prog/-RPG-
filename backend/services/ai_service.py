@@ -221,6 +221,8 @@ class AIService:
         event = {**template, "choices": [{**choice} for choice in template["choices"]]}
         event["title"] = template["title"].format(location=location["name"])
         opening = template["text"].format(name=game["player"]["name"], location=location["name"])
+        director = template.get("director", {})
+        director_prelude = template.get("directorPrelude", "")
         atmospheres = {
             "pallas": [
                 "薄雾还没有从青瓦之间散去，炊烟裹着药草与湿木的气味，沿石路缓慢铺开。",
@@ -252,6 +254,7 @@ class AIService:
             memory_line = " 过往的经历在此刻闪回，你明白今天的选择也会成为往后无法抹去的一笔。"
         event["text"] = "\n\n".join([
             random.choice(atmospheres.get(location["id"], atmospheres["pallas"])),
+            director_prelude,
             opening,
             reactions[dominant] + memory_line,
             "没有人替你催促，但局势正在悄然改变。你必须决定，自己愿意为怎样的结果承担代价。",
@@ -274,11 +277,17 @@ class AIService:
                 "当前时间": game.get("season", "未知"),
                 "主角称谓": "你",
                 "基础事件": opening,
+                "Director结构化约束": {
+                    "category": director.get("category"), "thread": director.get("threadId"),
+                    "stage": director.get("threadStage"), "stageFact": director.get("threadStageLabel"),
+                    "intent": director.get("intent"), "intensity": director.get("intensity"),
+                    "localConstraint": director_prelude,
+                },
                 "玩家性格": game["player"]["personality"],
                 "已有记忆": game["player"].get("memories", [])[-3:],
                 "可选行动": [choice["text"] for choice in event["choices"]],
                 "官方世界观检索": self.lore.context_for_event(location["id"], event["type"], opening),
-                "硬性边界": "只扩写事件经过，不修改选项，不替你行动，不提前结算。",
+                "硬性边界": "程序已经决定Thread、Stage、Location、Intent与强度。只扩写这次局部现场，不修改选项，不替你行动，不推进世界阶段，不创造重大世界结果，不提前结算。",
             },
             max_tokens=820 if is_boss else 700,
         ) if narrate else None
@@ -299,6 +308,8 @@ class AIService:
             yield self.generate_event(template, game, location, narrate=False)["text"]
             return
         opening = template["text"].format(name=game["player"]["name"], location=location["name"])
+        director = template.get("director", {})
+        director_prelude = template.get("directorPrelude", "")
         facts = {
             "事件标题": template["title"].format(location=location["name"]),
             "事件类型": template["type"],
@@ -306,11 +317,17 @@ class AIService:
             "当前时间": game.get("season", "未知"),
             "主角称谓": "你",
             "基础事件": opening,
+            "Director结构化约束": {
+                "category": director.get("category"), "thread": director.get("threadId"),
+                "stage": director.get("threadStage"), "stageFact": director.get("threadStageLabel"),
+                "intent": director.get("intent"), "intensity": director.get("intensity"),
+                "localConstraint": director_prelude,
+            },
             "玩家性格": game["player"]["personality"],
             "已有记忆": game["player"].get("memories", [])[-3:],
             "可选行动": [choice["text"] for choice in template["choices"]],
             "官方世界观检索": self.lore.context_for_event(location["id"], template["type"], opening),
-            "硬性边界": "只扩写事件经过，不修改选项，不替你行动，不提前结算。段落之间使用空行。",
+            "硬性边界": "程序已经决定Thread、Stage、Location、Intent与强度。只扩写这次局部现场，不修改选项，不替你行动，不推进世界阶段，不创造重大世界结果，不提前结算。段落之间使用空行。",
         }
         try:
             yield from self.remote_ai.stream(

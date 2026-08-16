@@ -39,6 +39,12 @@ class WorldThreadInterventionRequest(BaseModel):
     strategy: str = Field(pattern="^(investigate|intervene)$")
 
 
+class WorldFocusRequest(BaseModel):
+    game_id: str
+    topic_id: str
+    focused: bool = True
+
+
 class GameEnvelope(BaseModel):
     game: dict[str, Any]
     event: dict[str, Any] | None = None

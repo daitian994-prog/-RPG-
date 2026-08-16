@@ -34,5 +34,6 @@ export const api = {
   choose: (gameId, eventId, choiceIndex) => request('/api/choices', { method: 'POST', body: JSON.stringify({ game_id: gameId, event_id: eventId, choice_index: choiceIndex }) }),
   recover: (gameId, method = 'rest') => request('/api/recover', { method: 'POST', body: JSON.stringify({ game_id: gameId, method }) }),
   interveneThread: (gameId, threadId, strategy) => request('/api/world-threads/intervene', { method: 'POST', body: JSON.stringify({ game_id: gameId, thread_id: threadId, strategy }) }),
+  focusWorldTopic: (gameId, topicId, focused) => request('/api/world-focus', { method: 'POST', body: JSON.stringify({ game_id: gameId, topic_id: topicId, focused }) }),
   dialogue: (gameId, npcId) => request('/api/dialogue', { method: 'POST', body: JSON.stringify({ game_id: gameId, npc_id: npcId }) })
 }

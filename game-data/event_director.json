@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "randomFactor": {"min": 0.85, "max": 1.15},
+  "intentLabels": {
+    "rumor": "传闻", "clue": "线索", "encounter": "直接遭遇", "aftermath": "事件余波",
+    "environmental": "环境征兆", "npc_report": "NPC消息", "hero_overlap": "英雄交叉",
+    "investigation": "调查", "conflict": "冲突", "opportunity": "机会", "personal": "个人经历"
+  },
+  "eventProfiles": {
+    "e01": {"category": "environment", "intents": ["opportunity", "environmental"], "intensity": "low", "baseWeight": 1.15},
+    "e02": {"category": "personal", "intents": ["personal", "npc_report"], "intensity": "low", "baseWeight": 1.00},
+    "e03": {"category": "personal", "intents": ["personal", "opportunity"], "intensity": "low", "baseWeight": 0.95},
+    "e04": {"category": "environment", "intents": ["clue", "investigation"], "intensity": "medium", "baseWeight": 1.00},
+    "e05": {"category": "environment", "intents": ["rumor", "npc_report"], "intensity": "low", "baseWeight": 1.10},
+    "e06": {"category": "environment", "intents": ["environmental", "clue"], "intensity": "medium", "baseWeight": 1.15},
+    "e07": {"category": "personal", "intents": ["npc_report", "investigation"], "intensity": "medium", "baseWeight": 1.00},
+    "e08": {"category": "hero", "heroId": "shen", "heroName": "慎", "intents": ["hero_overlap", "clue"], "intensity": "medium", "baseWeight": 0.72},
+    "e09": {"category": "personal", "intents": ["personal", "opportunity"], "intensity": "medium", "baseWeight": 0.95},
+    "e10": {"category": "environment", "intents": ["encounter", "conflict"], "intensity": "high", "baseWeight": 0.72},
+    "e11": {"category": "environment", "intents": ["investigation", "clue"], "intensity": "medium", "baseWeight": 1.10},
+    "e12": {"category": "environment", "intents": ["encounter", "conflict"], "intensity": "high", "baseWeight": 0.76},
+    "e13": {"category": "personal", "intents": ["aftermath", "personal"], "intensity": "medium", "baseWeight": 0.94},
+    "e14": {"category": "environment", "intents": ["opportunity", "aftermath"], "intensity": "low", "baseWeight": 1.05},
+    "e15": {"category": "personal", "intents": ["personal", "npc_report"], "intensity": "medium", "baseWeight": 1.00},
+    "e16": {"category": "environment", "intents": ["investigation", "environmental"], "intensity": "medium", "baseWeight": 1.08},
+    "e17": {"category": "hero", "heroId": "shen", "heroName": "慎", "intents": ["hero_overlap", "npc_report"], "intensity": "medium", "baseWeight": 0.64},
+    "e18": {"category": "personal", "intents": ["personal", "aftermath"], "intensity": "medium", "baseWeight": 0.92},
+    "e19": {"category": "environment", "intents": ["npc_report", "environmental"], "intensity": "low", "baseWeight": 1.12},
+    "e20": {"category": "environment", "intents": ["conflict", "opportunity"], "intensity": "high", "baseWeight": 0.70}
+  },
+  "threadBindings": {
+    "noxian_remnants": {
+      "locationRelevance": {"pallas": "medium", "windbreak": "high", "war_ruins": "low", "mountain_temple": "medium"},
+      "templates": {"pallas": ["e05", "e02"], "windbreak": ["e10", "e07"], "war_ruins": ["e12", "e11"], "mountain_temple": ["e19", "e20"]},
+      "stageIntents": ["rumor", "rumor", "clue", "investigation", "encounter", "conflict", "aftermath"]
+    },
+    "spirit_anomaly": {
+      "locationRelevance": {"pallas": "low", "windbreak": "high", "war_ruins": "medium", "mountain_temple": "high"},
+      "templates": {"pallas": ["e04", "e03"], "windbreak": ["e06", "e09"], "war_ruins": ["e13", "e14"], "mountain_temple": ["e16", "e18"]},
+      "stageIntents": ["environmental", "environmental", "clue", "investigation", "encounter", "conflict", "aftermath"]
+    }
+  }
+}
