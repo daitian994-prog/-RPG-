@@ -110,7 +110,7 @@ class OutcomeEngine:
                         "relatedThread": director.get("threadId"),
                     }
                     memories = runtime.setdefault("importantMemories", [])
-                    if memory["id"] not in {item["id"] for item in memories}:
+                    if memory["id"] not in {item.get("id") for item in memories}:
                         memories.append(memory)
                         runtime["importantMemories"] = memories[-12:]
                 if tier in {"critical", "success"} and director.get("threadId") in runtime.get("activeThreads", []):

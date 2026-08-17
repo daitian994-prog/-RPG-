@@ -111,6 +111,12 @@ export default function App() {
     catch (e) { setError(e.message) } finally { setBusy(false) }
   }
 
+  const restartDemo = () => {
+    requestRef.current.controller?.abort()
+    setGame(null); setEvent(null); setResult(''); setAnswers([]); setStep(0); setTab('story')
+    setEventState('IDLE'); setScreen('questions')
+  }
+
   return <div className="app-shell">
     {screen === 'home' && <HomePage onStart={() => setScreen('questions')}/>} 
     {screen === 'questions' && <PersonalityPage step={step} onAnswer={answer} onBack={() => step ? setStep(step-1) : setScreen('home')}/>} 
@@ -119,6 +125,7 @@ export default function App() {
       game={game} world={world} event={event} result={result} tab={tab} busy={busy} eventState={eventState}
       onTab={setTab} onTravel={travel} onRecover={recover} onInterveneThread={interveneThread}
       onFocusWorldTopic={focusWorldTopic} onChoice={choose} onDialogue={dialogue}
+      onRestart={restartDemo}
       onCloseEvent={() => { requestRef.current.controller?.abort(); setEvent(null); setBusy(false); setEventState('IDLE') }}
     />}
     {transition && <WorldTransition scene={transition}/>} 

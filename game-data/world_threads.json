@@ -5,6 +5,7 @@
     "maxStage": 6,
     "urgency": 70,
     "initialAwareness": 10,
+    "chapterStageSchedule":[{"at":0,"maxStage":0},{"at":2,"maxStage":1},{"at":4,"maxStage":2},{"at":7,"maxStage":3},{"at":10,"maxStage":4},{"at":13,"maxStage":5}],
     "stages": ["尚未发生", "边境出现传闻", "斥候进入区域", "开始侦察村庄", "建立临时据点", "开始抓捕目标", "撤离并留下余波"],
     "awarenessSignals": [
       {"stage":1,"text":"商旅提到北面山道出现陌生军靴印。","locations":["pallas"],"gain":8},
@@ -24,6 +25,7 @@
     "maxStage": 6,
     "urgency": 52,
     "initialAwareness": 15,
+    "chapterStageSchedule":[{"at":0,"maxStage":0},{"at":2,"maxStage":1},{"at":4,"maxStage":2},{"at":6,"maxStage":3},{"at":9,"maxStage":4},{"at":11,"maxStage":5}],
     "stages": ["灵界平静", "动物避开旧路", "微弱灵息泄露", "梦境开始重叠", "异常扩散至聚落边缘", "灵体失去稳定形态", "异常固化并改变环境"],
     "awarenessSignals": [
       {"stage":1,"text":"林中的鸟群突然避开一条仍然完好的旧路。","locations":["windbreak"],"gain":8},

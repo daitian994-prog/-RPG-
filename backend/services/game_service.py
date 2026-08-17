@@ -1,4 +1,5 @@
 import json
+import copy
 import math
 import random
 import uuid
@@ -27,7 +28,14 @@ TRAIT_TO_FATE = {
     "destiny": "breaker",
 }
 SEASONS = ["春", "夏", "秋", "冬"]
-CHAPTER_ONE_ACTIONS = 12
+ACTIONS_PER_SEASON = 4
+CHAPTER_ONE_ACTIONS = 16
+CHAPTER_ONE_FINALE_START = 12
+FINALE_EVENTS = {
+    13: ("chapter1_spirit_finale", "mountain_temple", "finale_spirit"),
+    14: ("chapter1_yasuo_finale", "war_ruins", "finale_yasuo"),
+    15: ("chapter1_defense_finale", "pallas", "finale_defense"),
+}
 CORE_ABILITY_KEYS = ("martial", "physique", "perception", "willpower", "agility", "social")
 LEGACY_CORE_KEY_MAP = {"attunement": "perception", "resolve": "willpower", "finesse": "agility", "influence": "social"}
 BODY_CONDITIONS = {
@@ -201,19 +209,20 @@ class GameService:
         elif not old_inventory:
             player["inventory"] = []
         if "time" not in state:
-            used = max(0, 3 - int(state.get("action_points", 3)))
-            state["time"] = {"year": 1, "season_index": 0, "total_actions": used, "chapter_limit": CHAPTER_ONE_ACTIONS}
+            used = max(0, ACTIONS_PER_SEASON - int(state.get("action_points", ACTIONS_PER_SEASON)))
+            state["time"] = {"year": 1, "season_index": 0, "total_actions": used, "chapter_limit": CHAPTER_ONE_ACTIONS, "actions_per_season": ACTIONS_PER_SEASON}
             state["season"] = "第一年 · 春"
             state.setdefault("chapter_phase", "journey")
             state.setdefault("chapter_complete", False)
             changed = True
         elif state["time"].get("chapter_limit") != CHAPTER_ONE_ACTIONS:
             state["time"]["chapter_limit"] = CHAPTER_ONE_ACTIONS
+            state["time"]["actions_per_season"] = ACTIONS_PER_SEASON
             state["time"]["total_actions"] = min(int(state["time"].get("total_actions", 0)), CHAPTER_ONE_ACTIONS)
             if state.get("chapter_complete"):
-                state["time"]["year"] = 2
-                state["time"]["season_index"] = 0
-                state["season"] = "第二年 · 春 · 战后"
+                state["time"]["year"] = 1
+                state["time"]["season_index"] = 3
+                state["season"] = "第一年 · 冬末 · 尾声"
             elif state["time"]["total_actions"] >= CHAPTER_ONE_ACTIONS:
                 state["chapter_phase"] = "invasion"
                 state["location"] = "pallas"
@@ -221,6 +230,17 @@ class GameService:
                 state["time"]["season_index"] = 3
                 state["season"] = "第一年 · 冬末"
             changed = True
+        elif state["time"].get("actions_per_season") != ACTIONS_PER_SEASON:
+            state["time"]["actions_per_season"] = ACTIONS_PER_SEASON
+            changed = True
+        for key, default in {
+            "demo_complete": bool(state.get("chapter_complete", False)),
+            "chapter_summary": None,
+            "chapterFinale": {"completedStages": [], "choices": {}, "preparationStrength": 0},
+        }.items():
+            if key not in state:
+                state[key] = copy.deepcopy(default)
+                changed = True
         if state.get("gameVersion") != PROJECT_VERSION:
             state["gameVersion"] = PROJECT_VERSION
             changed = True
@@ -279,14 +299,17 @@ class GameService:
             "player": player,
             "location": "pallas",
             "season": "第一年 · 春",
-            "time": {"year": 1, "season_index": 0, "total_actions": 0, "chapter_limit": CHAPTER_ONE_ACTIONS},
-            "action_points": 3,
+            "time": {"year": 1, "season_index": 0, "total_actions": 0, "chapter_limit": CHAPTER_ONE_ACTIONS, "actions_per_season": ACTIONS_PER_SEASON},
+            "action_points": ACTIONS_PER_SEASON,
             "relationships": {npc["id"]: {"score": 0, "memories": []} for npc in self.npcs},
             "visited": ["pallas"],
             "completed_events": [],
             "chapter": 1,
             "chapter_phase": "journey",
             "chapter_complete": False,
+            "demo_complete": False,
+            "chapter_summary": None,
+            "chapterFinale": {"completedStages": [], "choices": {}, "preparationStrength": 0},
             "battle_complete": False,
             "last_resolution": None,
             "player_state_version": 1,
@@ -338,6 +361,11 @@ class GameService:
     def travel(self, game_id: str, location_id: str, *, narrate: bool = True) -> tuple[dict[str, Any], dict[str, Any]]:
         state = self.get(game_id)
         before = self.outcomes.snapshot(state)
+        if state.get("demo_complete"):
+            raise ValueError("第一章试玩已经结束，可以查看结局总结或重新开始")
+        pending = state.get("pendingEvent", {})
+        if pending.get("template", {}).get("finale_stage"):
+            return state, self._chapter_fixed_event(state, pending["templateId"], state["location"], pending["template"]["finale_stage"], narrate=narrate)
         if state.get("chapter_phase") == "invasion" and not state.get("chapter_complete"):
             return state, self._chapter_boss_event(state, narrate=narrate)
         if state["action_points"] <= 0:
@@ -346,12 +374,12 @@ class GameService:
                 state["location"] = "pallas"
                 save_game(game_id, state)
                 return state, self._chapter_boss_event(state, narrate=narrate)
-            state["action_points"] = 3
-            period = state["time"]["total_actions"] // 3
+            state["action_points"] = ACTIONS_PER_SEASON
+            period = state["time"]["total_actions"] // ACTIONS_PER_SEASON
             state["time"]["year"] = period // 4 + 1
             state["time"]["season_index"] = period % 4
             state["season"] = f"第{state['time']['year']}年 · {SEASONS[state['time']['season_index']]}"
-            state["log"].append(f"季节向前推移。{state['season']}到来，你获得了新的三次行动。")
+            state["log"].append(f"季节向前推移。{state['season']}到来，你获得了新的四次行动。")
         location = next((x for x in self.locations if x["id"] == location_id), None)
         if not location:
             raise ValueError("未知地点")
@@ -364,6 +392,14 @@ class GameService:
         state["latestWorldSignals"] = self.world_threads.advance(state, action="travel", location=location_id)
         self.hero_actors.tick(state)
         state["heroEncounter"] = self.hero_actors.encounter(state, location_id)
+        finale = FINALE_EVENTS.get(state["time"]["total_actions"])
+        if finale:
+            event_id, forced_location, phase = finale
+            state["chapter_phase"] = phase
+            state["location"] = forced_location
+            state["season"] = "第一年 · 冬 · 终章"
+            save_game(game_id, state)
+            return state, self._chapter_fixed_event(state, event_id, forced_location, phase, narrate=narrate)
         if state["time"]["total_actions"] >= CHAPTER_ONE_ACTIONS and not state.get("chapter_complete"):
             state["chapter_phase"] = "invasion"
             state["location"] = "pallas"
@@ -371,6 +407,10 @@ class GameService:
             state["log"].append("第一年冬末，帕拉斯北面的山道响起了战争号角。一年的平静在这一刻结束。")
             save_game(game_id, state)
             return state, self._chapter_boss_event(state, narrate=narrate)
+
+        if state["time"]["total_actions"] == CHAPTER_ONE_FINALE_START:
+            state["chapter_phase"] = "finale_ready"
+            state["log"].append("冬季渐深，三条纠缠了一年的线索开始同时收紧。接下来的行动将进入第一章终章。")
 
         generated_pool = self.dynamic_events.generate_pool(state, location_id)
         selection = self.director.select(state, location_id, generated_pool)
@@ -402,6 +442,30 @@ class GameService:
         self.outcomes.record(state, "travel_and_select_event", before, metadata={"locationId": location_id, "eventId": selection["eventId"], "candidateId": selection["candidateId"]})
         save_game(game_id, state)
         return state, event
+
+    def _chapter_fixed_event(self, state: dict[str, Any], event_id: str, location_id: str, stage: str, *, narrate: bool = True) -> dict[str, Any]:
+        template = copy.deepcopy(next(event for event in self.chapter_events if event["id"] == event_id))
+        location = next(location for location in self.locations if location["id"] == location_id)
+        selection = {
+            **template.get("director", {}), "eventId": event_id, "templateId": event_id,
+            "candidateId": f"{event_id}:authored", "seed": event_id,
+            "threadStageLabel": stage, "directorContext": template.get("finale_context", "第一章终章的固定收束节点。"),
+        }
+        template["event_seed"] = event_id
+        template["eventContext"] = self.event_context.build(state, location, selection, template)
+        event = self.ai.generate_event(template, state, location, narrate=narrate)
+        event["finale_stage"] = stage
+        event["lockChoicesUntilComplete"] = True
+        event["world_state_version"] = self.state_version(state)
+        event["event_seed"] = event_id
+        event["director"] = selection
+        state["pendingEvent"] = {
+            "id": event_id, "templateId": event_id, "eventSeed": event_id,
+            "director": selection, "directorPrelude": selection["directorContext"],
+            "eventContext": template["eventContext"], "template": template,
+        }
+        save_game(state["id"], state)
+        return event
 
     def _event_template(
         self, state: dict[str, Any], event_id: str, *, selection: dict[str, Any] | None = None,
@@ -439,7 +503,12 @@ class GameService:
         }
 
     def _chapter_boss_event(self, state: dict[str, Any], *, narrate: bool = True) -> dict[str, Any]:
-        template = dict(next(event for event in self.chapter_events if event["id"] == "chapter1_boss"))
+        template = copy.deepcopy(next(event for event in self.chapter_events if event["id"] == "chapter1_boss"))
+        preparation = int(state.get("chapterFinale", {}).get("preparationStrength", 0))
+        if preparation:
+            for choice in template["choices"]:
+                choice["difficulty"] = max(7, int(choice.get("difficulty", 11)) - preparation)
+                choice["hint"] = f"{choice['hint']} · 此前的守备准备正在发挥作用"
         location = next(location for location in self.locations if location["id"] == "pallas")
         runtime = state["heroActors"]["yasuo"]
         relation = runtime["playerRelation"]
@@ -467,6 +536,7 @@ class GameService:
         event = self.ai.generate_event(template, state, location, narrate=narrate)
         event["boss"] = template["boss"]
         event["chapter_finale"] = True
+        event["lockChoicesUntilComplete"] = True
         event["world_state_version"] = self.state_version(state)
         event["event_seed"] = selection["seed"]
         event["director"] = selection
@@ -479,6 +549,75 @@ class GameService:
         self.hero_actors.record_encounter(state, level)
         save_game(state["id"], state)
         return event
+
+    def _apply_finale_choice(self, state: dict[str, Any], event: dict[str, Any], choice: dict[str, Any]) -> None:
+        effect = choice.get("chapter_effect")
+        if not effect:
+            return
+        finale = state.setdefault("chapterFinale", {"completedStages": [], "choices": {}, "preparationStrength": 0})
+        stage = event.get("finale_stage")
+        if stage and stage not in finale["completedStages"]:
+            finale["completedStages"].append(stage)
+        finale["choices"][stage or event["id"]] = {
+            "choice": choice["text"], "summary": effect.get("summary", ""),
+        }
+        if effect.get("line"):
+            self.world_threads.finalize_for_chapter(state, effect["line"], favorable=bool(effect.get("favorable")))
+        if effect.get("heroChoice"):
+            runtime = state["heroActors"]["yasuo"]
+            boosts = {
+                "equals": {"recognition": 20, "trust": 12, "respect": 18, "alignment": 8},
+                "guardian": {"recognition": 16, "trust": 14, "respect": 22, "alignment": 10},
+                "honest": {"recognition": 18, "trust": 20, "respect": 12, "alignment": 12},
+            }[effect["heroChoice"]]
+            for key, value in boosts.items():
+                runtime["playerRelation"][key] = min(100, runtime["playerRelation"].get(key, 0) + value)
+            runtime["importantMemories"].append({"id": f"chapter1_yasuo_finale:{effect['heroChoice']}", "type": "chapter_bond", "importance": 4, "worldTime": state["time"]["total_actions"], "summary": effect["summary"]})
+        if effect.get("preparation"):
+            finale["preparation"] = effect["preparation"]
+            finale["preparationStrength"] = int(effect.get("strength", 1))
+
+    def _complete_demo(self, state: dict[str, Any], *, victory: bool) -> None:
+        finale = state.setdefault("chapterFinale", {"completedStages": [], "choices": {}, "preparationStrength": 0})
+        noxian = self.world_threads.finalize_for_chapter(state, "noxian_remnants", favorable=victory)
+        spirit = next((item for item in state["worldState"]["activeThreads"] if item["id"] == "spirit_anomaly"), None)
+        if spirit and not spirit.get("resolved"):
+            spirit_outcome = self.world_threads.finalize_for_chapter(
+                state, "spirit_anomaly", favorable=bool(spirit.get("selectedOutcome") or spirit.get("playerInterventions")),
+            )
+        else:
+            spirit_outcome = copy.deepcopy((spirit or {}).get("resolvedOutcome", {}))
+        runtime = state["heroActors"]["yasuo"]
+        relation = runtime["playerRelation"]
+        runtime["availability"] = "departed"
+        runtime["status"] = "active"
+        runtime["lastAction"] = {
+            "type": "depart_after_chapter", "worldTime": state["time"]["total_actions"],
+            "location": "pallas", "summary": "天亮后，亚索沿北面的山路离开帕拉斯，继续追查残军来路。",
+        }
+        yasuo_choice = finale.get("choices", {}).get("finale_yasuo", {}).get("summary")
+        yasuo_summary = yasuo_choice or (
+            "亚索记住了你守住帕拉斯的方式；天亮后，他沿北面的山路继续流浪。"
+            if victory else "亚索把你从死亡线上带回，却没有替你抹去失败的代价；天亮后，他继续上路。"
+        )
+        preparation = finale.get("choices", {}).get("finale_defense", {}).get("summary", "帕拉斯在仓促中迎来了血旗。")
+        state["chapter_summary"] = {
+            "title": "第一章 · 血旗落下之后",
+            "result": "你守住了帕拉斯，血旗在冬日黎明前坠落。" if victory else "帕拉斯没有陷落，但这一夜留下了焦土、伤者与尚未偿还的代价。",
+            "playerLegacy": "帕拉斯守望者" if victory else "血旗之夜幸存者",
+            "lines": [
+                {"id": "spirit_anomaly", "title": "灵体异常", "closure": spirit_outcome.get("label", "灵界异象暂时平息"), "detail": finale.get("choices", {}).get("finale_spirit", {}).get("summary", "异常在冬末形成了暂时结果。"), "hook": "树影所畏惧的灵界震动仍来自艾欧尼亚深处。"},
+                {"id": "yasuo", "title": "风与浪人", "closure": yasuo_summary, "detail": f"认可 {relation.get('recognition', 0)} · 信任 {relation.get('trust', 0)} · 尊重 {relation.get('respect', 0)}", "hook": "亚索带着残军进军图上的另一处标记继续北行。"},
+                {"id": "noxian_remnants", "title": "诺克萨斯残军", "closure": noxian.get("label", "血旗军退出帕拉斯"), "detail": preparation, "hook": "卡尔戈只是旧军旗的一角，真正召集残军的人仍未现身。"},
+            ],
+            "nextChapterHook": "春天终会到来。山寺地底的树根、亚索带走的进军图，以及北方未曾熄灭的火光，都在等待下一章。",
+        }
+        state["chapter_complete"] = True
+        state["demo_complete"] = True
+        state["chapter_phase"] = "demo_complete"
+        state["action_points"] = 0
+        state["time"].update({"year": 1, "season_index": 3, "total_actions": CHAPTER_ONE_ACTIONS})
+        state["season"] = "第一年 · 冬末 · 尾声"
 
     def narrate_event(self, game_id: str, event_id: str) -> str:
         state = self.get(game_id)
@@ -599,7 +738,7 @@ class GameService:
             victory = outcome["code"] in {"critical", "success", "partial"}
             battle_text = self.ai.generate_battle_text(player, victory, choice_index)
             state["battle_complete"] = True
-            battle = {"victory": victory, "chance": chance, "nodes": 4 if is_boss else 2, "is_boss": is_boss, "boss": event.get("boss")}
+            battle = {"victory": victory, "chance": chance, "nodes": 1 if is_boss else 2, "is_boss": is_boss, "boss": event.get("boss")}
             if victory:
                 xp_gain = 40 if is_boss else 15
                 stats["combat_xp"] += xp_gain
@@ -623,12 +762,11 @@ class GameService:
                     player["tags"].append("血旗之夜幸存者")
                     battle_text += " 卡尔戈的重刃击碎了你最后的防守。就在刀锋再次落下前，疾风越过战场，亚索将你拖离死亡线。村庄最终没有陷落，却有许多屋舍化作灰烬。‘活下来，’他在离开前说，‘下一次，别把命交给路过的人。’"
             if is_boss:
-                state["chapter_complete"] = True
-                state["chapter_phase"] = "aftermath"
-                state["action_points"] = 3
-                state["time"]["year"] = 2
-                state["time"]["season_index"] = 0
-                state["season"] = "第二年 · 春 · 战后"
+                self._complete_demo(state, victory=victory)
+
+        self._apply_finale_choice(state, event, choice)
+        if event.get("finale_stage") and not state.get("demo_complete"):
+            state["chapter_phase"] = "finale_ready"
 
         director = {**event.get("director", {}), "eventId": event_id}
         world_feedback = self.outcomes.apply_world_feedback(state, director, outcome, choice)
@@ -672,8 +810,12 @@ class GameService:
         snapshot = self.outcomes.snapshot(state)
         if state["location"] != "pallas":
             raise ValueError("只有安全地点才能进行稳定休息")
-        if state.get("chapter_phase") == "invasion" and not state.get("chapter_complete"):
-            raise ValueError("入侵期间无法安全休息")
+        if state.get("demo_complete"):
+            raise ValueError("第一章试玩已经结束")
+        if state["time"]["total_actions"] >= CHAPTER_ONE_FINALE_START or state.get("chapter_phase", "").startswith("finale") or state.get("chapter_phase") == "invasion":
+            raise ValueError("终章已经开始，现在必须处理眼前的局势")
+        if state["action_points"] <= 0:
+            raise ValueError("本季行动次数已经用完，请通过下一次旅行进入新季节")
         player = state["player"]
         before = player["injurySeverity"]
         cleared = [item["name"] for item in player["statuses"] if item.get("id") in {"fatigue", "tense"} or item["name"] in {"疲惫", "紧张"}]
@@ -699,6 +841,10 @@ class GameService:
     def intervene_world_thread(self, game_id: str, thread_id: str, strategy: str) -> tuple[dict[str, Any], dict[str, Any]]:
         state = self.get(game_id)
         snapshot = self.outcomes.snapshot(state)
+        if state.get("demo_complete"):
+            raise ValueError("第一章试玩已经结束")
+        if state["time"]["total_actions"] >= CHAPTER_ONE_FINALE_START or state.get("chapter_phase", "").startswith("finale") or state.get("chapter_phase") == "invasion":
+            raise ValueError("终章已经开始，世界线将通过最后四幕依次收束")
         if state["action_points"] <= 0:
             raise ValueError("本季行动次数已经用完")
         result = self.world_threads.intervene(state, thread_id, strategy)

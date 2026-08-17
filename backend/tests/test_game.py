@@ -47,9 +47,9 @@ class GameLoopTest(unittest.TestCase):
 
     def test_complete_action_loop(self):
         game = self.service.new_game(["peace", "power", "freedom", "spirit", "destiny", "peace+spirit"])
-        self.assertEqual(game["action_points"], 3)
+        self.assertEqual(game["action_points"], 4)
         game, event = self.service.travel(game["id"], "war_ruins")
-        self.assertEqual(game["action_points"], 2)
+        self.assertEqual(game["action_points"], 3)
         game, resolution = self.service.resolve(game["id"], event["id"], 0)
         self.assertTrue(resolution["narrative"])
         self.assertIn("changes", resolution)
@@ -108,7 +108,7 @@ class GameLoopTest(unittest.TestCase):
         self.assertTrue(game["player"]["inventory"][0]["description"])
         self.assertNotIn("bonuses", game["player"]["inventory"][0])
         self.assertIn("effects", game["player"]["inventory"][0])
-        self.assertEqual(game["gameVersion"], "0.3.18")
+        self.assertEqual(game["gameVersion"], "0.4.0")
 
     def test_world_thread_intervention_costs_time_and_persists(self):
         game = self.service.new_game(["peace", "power", "freedom", "spirit", "destiny", "peace"])
@@ -118,7 +118,7 @@ class GameLoopTest(unittest.TestCase):
         save_game(game["id"], game)
         updated, result = self.service.intervene_world_thread(game["id"], thread["id"], "intervene")
         self.assertEqual(result["cost"], {"actionCost": 1, "timeCost": 1})
-        self.assertEqual(updated["action_points"], 2)
+        self.assertEqual(updated["action_points"], 3)
         self.assertEqual(updated["worldState"]["worldTime"], 1)
         self.assertEqual(self.service.get(game["id"])["worldState"]["activeThreads"][0]["selectedOutcome"]["id"], "remnants_disrupted")
 
@@ -340,8 +340,18 @@ class GameLoopTest(unittest.TestCase):
         event = None
         for _ in range(12):
             game, event = self.service.travel(game["id"], "pallas")
-        self.assertEqual(game["time"]["total_actions"], 12)
-        self.assertEqual(game["time"]["chapter_limit"], 12)
+        self.assertEqual(game["time"]["chapter_limit"], 16)
+        self.assertEqual(game["time"]["actions_per_season"], 4)
+        self.assertEqual(game["chapter_phase"], "finale_ready")
+
+        expected = ["chapter1_spirit_finale", "chapter1_yasuo_finale", "chapter1_defense_finale"]
+        for expected_id in expected:
+            game, event = self.service.travel(game["id"], "pallas", narrate=False)
+            self.assertEqual(event["id"], expected_id)
+            game, _ = self.service.resolve(game["id"], event["id"], 0)
+
+        game, event = self.service.travel(game["id"], "pallas", narrate=False)
+        self.assertEqual(game["time"]["total_actions"], 16)
         self.assertEqual(game["season"], "第一年 · 冬末")
         self.assertEqual(event["id"], "chapter1_boss")
         self.assertEqual(event["boss"]["name"], "血旗督军·卡尔戈")
@@ -352,7 +362,10 @@ class GameLoopTest(unittest.TestCase):
         self.assertTrue(resolution["battle"]["is_boss"])
         self.assertTrue(resolution["battle"]["victory"])
         self.assertTrue(game["chapter_complete"])
-        self.assertEqual(game["season"], "第二年 · 春 · 战后")
+        self.assertTrue(game["demo_complete"])
+        self.assertEqual(game["season"], "第一年 · 冬末 · 尾声")
+        self.assertEqual(len(game["chapter_summary"]["lines"]), 3)
+        self.assertEqual(game["heroActors"]["yasuo"]["availability"], "departed")
         self.assertIn("血旗断刃", [item["name"] for item in game["player"]["inventory"]])
 
     def test_legacy_two_year_save_migrates_to_one_year_finale(self):
@@ -362,7 +375,7 @@ class GameLoopTest(unittest.TestCase):
         game["time"] = {"year": 2, "season_index": 1, "total_actions": 16, "chapter_limit": 24}
         game["season"] = "第二年 · 夏"
         self.assertTrue(self.service._normalize_state(game))
-        self.assertEqual(game["time"], {"year": 1, "season_index": 3, "total_actions": 12, "chapter_limit": 12})
+        self.assertEqual(game["time"], {"year": 1, "season_index": 3, "total_actions": 16, "chapter_limit": 16, "actions_per_season": 4})
         self.assertEqual(game["chapter_phase"], "invasion")
         self.assertEqual(game["season"], "第一年 · 冬末")
         self.assertEqual(game["location"], "pallas")

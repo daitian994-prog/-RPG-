@@ -10,14 +10,14 @@ const personalityNames = {peace:'和平倾向',power:'力量观',freedom:'自由
 const fateNames = {guardian:'守护命运',strong:'强者命运',wanderer:'流浪命运',spirit:'灵界命运',breaker:'破局命运'}
 const locationIcons = { village: Leaf, forest: Compass, ruins: Sword, temple: Sparkles }
 
-export default function GamePage({ game, world, event, result, tab, busy, eventState, onTab, onTravel, onRecover, onInterveneThread, onFocusWorldTopic, onChoice, onDialogue, onCloseEvent }) {
+export default function GamePage({ game, world, event, result, tab, busy, eventState, onTab, onTravel, onRecover, onInterveneThread, onFocusWorldTopic, onChoice, onDialogue, onCloseEvent, onRestart }) {
   const location = world.locations.find(x => x.id === game.location)
   const localNpcs = world.npcs.filter(n => n.location === game.location || n.id === 'companion')
   return <main className="game-page page-enter">
     <PlayerHeader game={game} location={location}/>
     <section className="game-content">
-      {tab === 'story' && <Story game={game} location={location} result={result} npcs={world.npcs} onMap={() => onTab('map')}/>} 
-      {tab === 'map' && <WorldMap locations={world.locations} mapPlaces={world.map_places || []} current={game.location} points={game.action_points} time={game.time} chapterComplete={game.chapter_complete} bodyCondition={game.player.bodyCondition} busy={busy} onTravel={onTravel} onRecover={onRecover}/>}
+      {tab === 'story' && <Story game={game} location={location} result={result} npcs={world.npcs} onMap={() => onTab('map')} onRestart={onRestart}/>}
+      {tab === 'map' && <WorldMap locations={world.locations} mapPlaces={world.map_places || []} current={game.location} points={game.action_points} time={game.time} chapterComplete={game.chapter_complete} chapterPhase={game.chapter_phase} bodyCondition={game.player.bodyCondition} busy={busy} onTravel={onTravel} onRecover={onRecover}/>}
       {tab === 'people' && <People npcs={localNpcs} relationships={game.relationships} onDialogue={onDialogue}/>} 
       {tab === 'status' && <Status
         player={game.player} game={game} busy={busy}
@@ -29,7 +29,7 @@ export default function GamePage({ game, world, event, result, tab, busy, eventS
   </main>
 }
 
-function Story({ game, location, result, npcs, onMap }) {
+function Story({ game, location, result, npcs, onMap, onRestart }) {
   const resolution = result && typeof result === 'object' ? result : game.last_resolution
   const latest = resolution?.narrative || result || game.log.at(-1)
   return <div className="story-view">
@@ -38,9 +38,18 @@ function Story({ game, location, result, npcs, onMap }) {
     <article><Scroll size={18}/><div className="narrative-copy">{String(latest).split('\n\n').map((p,i) => <p key={i}>{p}</p>)}</div></article>
     <WorldSignals signals={game.latestWorldSignals || []}/>
     {resolution && <ResolutionPanel resolution={resolution} npcs={npcs}/>} 
-    {game.chapter_complete ? <div className="milestone chapter-end"><Shield size={18}/><div><b>第一章完成 · 一年之约</b><span>帕拉斯的入侵已经结束，你的名字留在了村庄记忆里。</span></div></div> : game.battle_complete && <div className="milestone"><Shield size={18}/><div><b>旅途印记 · 初战</b><span>你已经历一次真正的战斗。故事仍在继续。</span></div></div>}
-    <button className="next-action" onClick={onMap}><span><Compass size={19}/>选择下一次行动</span><ChevronRight/></button>
+    {game.demo_complete ? <DemoEnding summary={game.chapter_summary} onRestart={onRestart}/> : game.battle_complete && <div className="milestone"><Shield size={18}/><div><b>旅途印记 · 初战</b><span>你已经历一次真正的战斗。故事仍在继续。</span></div></div>}
+    {!game.demo_complete && <button className="next-action" onClick={onMap}><span><Compass size={19}/>{game.time.total_actions >= 12 ? '继续第一章终章' : '选择下一次行动'}</span><ChevronRight/></button>}
   </div>
+}
+
+function DemoEnding({ summary, onRestart }) {
+  const safe = summary || {title:'第一章 · 血旗落下之后',result:'这一年的旅途已经告一段落。',playerLegacy:'无名者',lines:[],nextChapterHook:'故事仍会继续。'}
+  return <section className="demo-ending">
+    <span>试玩 Demo 完成</span><h3>{safe.title}</h3><p>{safe.result}</p><div className="ending-legacy"><Shield size={18}/><div><small>本章留下的名字</small><b>{safe.playerLegacy}</b></div></div>
+    <div className="ending-lines">{safe.lines.map(line=><article key={line.id}><span>本章收束</span><h4>{line.title}</h4><b>{line.closure}</b><p>{line.detail}</p><small>后续伏笔 · {line.hook}</small></article>)}</div>
+    <blockquote>{safe.nextChapterHook}</blockquote><button className="restart-demo" onClick={onRestart}>重新开始试玩</button>
+  </section>
 }
 
 function ResolutionPanel({ resolution, npcs }) {
@@ -76,18 +85,21 @@ const pallasLocalPositions = {
   mountain_temple: [76, 27],
 }
 
-function WorldMap({ locations, mapPlaces, current, points, time, chapterComplete, bodyCondition, busy, onTravel, onRecover }) {
+function WorldMap({ locations, mapPlaces, current, points, time, chapterComplete, chapterPhase, bodyCondition, busy, onTravel, onRecover }) {
   const [mapLevel, setMapLevel] = useState('ionia')
   const remaining = Math.max(0, time.chapter_limit - time.total_actions)
   const overviewPlaces = mapPlaces.filter(place => place.id !== 'ionian_archipelago')
   const openPallas = () => setMapLevel('pallas')
+  const inFinale = !chapterComplete && time.total_actions >= 12
+  const finaleNext = {12:['mountain_temple','终章一 · 前往山寺平息灵界异象'],13:['war_ruins','终章二 · 赴战争遗迹与亚索会合'],14:['pallas','终章三 · 返回帕拉斯布置防线'],15:['pallas','终章四 · 迎战血旗督军']}[time.total_actions]
   const handleLocalKey = (event, locationId) => {
     if (event.key !== 'Enter' && event.key !== ' ') return
     event.preventDefault()
     if (!busy && locationId !== current) onTravel(locationId)
   }
   return <div className="map-view">
-    <div className="section-heading"><p>艾欧尼亚 · 东部</p><h3>选择去处</h3><span>{points} 次行动可用{points === 0 ? ' · 下一次行动进入新季节' : ''}</span><div className="chapter-countdown"><i><span style={{width:`${Math.min(100,time.total_actions / time.chapter_limit * 100)}%`}}/></i><b>{chapterComplete ? '第一章已经结束' : `一年之期 · 还剩 ${remaining} 次行动`}</b></div></div>
+    <div className="section-heading"><p>艾欧尼亚 · 东部</p><h3>{inFinale ? '第一章终章' : '选择去处'}</h3><span>{chapterComplete ? '试玩已经结束' : inFinale ? '最后四幕将依次推进' : `${points} 次行动可用${points === 0 ? ' · 下一次行动进入新季节' : ''}`}</span><div className="chapter-countdown"><i><span style={{width:`${Math.min(100,time.total_actions / time.chapter_limit * 100)}%`}}/></i><b>{chapterComplete ? '第一章已经结束' : `一年之期 · 还剩 ${remaining} 次行动`}</b></div></div>
+    {inFinale && finaleNext && <section className="finale-next"><span>固定终章 · {time.total_actions - 11} / 4</span><b>{finaleNext[1]}</b><p>终章已经开始，调查、休息和自由旅行暂时关闭。完成这一幕后才会进入下一段收尾。</p><button disabled={busy} onClick={()=>onTravel(finaleNext[0])}>继续终章</button></section>}
     <div className={`map-canvas map-level-${mapLevel}`}>
       <div className="map-window-label"><b>{mapLevel === 'ionia' ? '艾欧尼亚大陆' : '帕拉斯地区'}</b><span>{mapLevel === 'ionia' ? '灰色地点暂未开放' : '四个章节探索地点'}</span></div>
       <div className="map-zoom-controls" aria-label="地图窗口缩放"><button disabled={mapLevel === 'ionia'} onClick={() => setMapLevel('ionia')} aria-label="缩小至艾欧尼亚全境"><Minus size={13}/>全境</button><button disabled={mapLevel === 'pallas'} onClick={openPallas} aria-label="放大至帕拉斯地区"><Plus size={13}/>帕拉斯</button></div>
@@ -103,8 +115,8 @@ function WorldMap({ locations, mapPlaces, current, points, time, chapterComplete
       <div className="map-wash wash-a"/><div className="map-wash wash-b"/>
     </div>
     <div className="map-note"><span><MapPin size={14}/>{mapLevel === 'ionia' ? '点击帕拉斯，在地图窗口内放大' : '使用窗口右上角按钮返回全境'}</span></div>
-    {current === 'pallas' && <section className="recovery-card"><div><span>安全地点 · 稳定恢复</span><b>在帕拉斯休息</b><p>解除疲惫和紧张，使伤势改善一级。消耗 1 次行动，时间成本 1。</p></div><button disabled={busy || points <= 0 || bodyCondition?.state === 'healthy'} onClick={onRecover}>休息 / 治疗</button></section>}
-    <section className="travel-list"><header><div><span>周边行程</span><b>章节探索地点</b></div><small>帕拉斯地区内的四个可探索地点</small></header>{locations.map(loc => { const Icon=locationIcons[loc.icon]; const active=loc.id===current; return <button disabled={busy||active} key={loc.id} onClick={() => onTravel(loc.id)} className={active?'current':''}><i><Icon size={17}/></i><div><b>{loc.name}</b><small>{loc.description}</small></div><em>{active?'当前位置':'前往 · 1'}</em></button> })}</section>
+    {!inFinale && current === 'pallas' && <section className="recovery-card"><div><span>安全地点 · 稳定恢复</span><b>在帕拉斯休息</b><p>解除疲惫和紧张，使伤势改善一级。消耗 1 次行动，时间成本 1。</p></div><button disabled={busy || points <= 0 || bodyCondition?.state === 'healthy'} onClick={onRecover}>休息 / 治疗</button></section>}
+    {!inFinale && <section className="travel-list"><header><div><span>周边行程</span><b>章节探索地点</b></div><small>帕拉斯地区内的四个可探索地点</small></header>{locations.map(loc => { const Icon=locationIcons[loc.icon]; const active=loc.id===current; return <button disabled={busy||active||chapterComplete} key={loc.id} onClick={() => onTravel(loc.id)} className={active?'current':''}><i><Icon size={17}/></i><div><b>{loc.name}</b><small>{loc.description}</small></div><em>{active?'当前位置':'前往 · 1'}</em></button> })}</section>}
   </div>
 }
 
@@ -115,7 +127,7 @@ function People({ npcs, relationships, onDialogue }) {
 function Status({ player, game, busy, onInterveneThread, onFocusWorldTopic }) {
   return <div className="status-view"><div className="section-heading"><p>普通人的传说</p><h3>{player.name}的人物档案</h3></div>
     <div className="profile-card"><span>{player.age}</span><div><b>{player.family}</b><small>{player.birthplace}</small></div></div>
-    <h4>第一章时间轴 <small>一年 · 四季 · 每季3次行动</small></h4><SeasonTimeline time={game.time} complete={game.chapter_complete}/>
+    <h4>第一章时间轴 <small>一年 · 四季 · 每季4次行动</small></h4><SeasonTimeline time={game.time} complete={game.chapter_complete}/>
     <h4>角色状态</h4><section className={`body-condition ${player.bodyCondition.state}`}><header><span>身体状况</span><b>{player.bodyCondition.label}</b></header><p>{player.bodyCondition.description}</p>{debugMode && <div>{Object.entries(player.bodyCondition.modifiers || {}).map(([key,value])=><em key={key}>{coreAttributeNames[key]} {value}%</em>)}</div>}</section>
     <div className="effect-list">{player.statuses?.length ? player.statuses.map(item=><span key={item.id || item.name}>状态 · {item.name} · {item.duration ?? '条件解除'}</span>) : <small>没有临时状态</small>}{player.traits?.map(item=><span key={item.id}>特质 · {item.name} Lv.{item.level}</span>)}</div>
     <h4>核心能力 <small>决定你能不能做到</small></h4><div className="core-stat-grid">{Object.entries(player.coreAbilities || {}).map(([key,value])=><div key={key}><span>{coreAttributeNames[key]}</span><b>{value}</b></div>)}</div>
@@ -150,21 +162,21 @@ function WorldThreads({ game, busy, onInterveneThread, onFocusWorldTopic }) {
 const gameActionUnavailable = thread => thread.interventionWindow === 'CLOSED'
 
 function ValueBar({ label, value }) { return <div className="value-bar"><header><span>{label}</span><b>{value}</b></header><i><span style={{width:`${Math.min(100,value)}%`}}/></i></div> }
-function SeasonTimeline({ time, complete }) { const seasons=['春','夏','秋','冬']; const current=Math.min(3,time.season_index); return <div className="season-timeline">{seasons.map((season,i)=><div key={i} className={`${time.total_actions >= (i+1)*3 || complete ? 'done' : ''} ${!complete && i===current ? 'current' : ''}`}><span>第一年</span><b>{season}</b><small>{Math.min(3,Math.max(0,time.total_actions-i*3))} / 3</small></div>)}</div> }
+function SeasonTimeline({ time, complete }) { const seasons=['春','夏','秋','冬']; const perSeason=time.actions_per_season || 4; const current=Math.min(3,Math.floor(Math.min(time.total_actions,time.chapter_limit-1)/perSeason)); return <div className="season-timeline">{seasons.map((season,i)=><div key={i} className={`${time.total_actions >= (i+1)*perSeason || complete ? 'done' : ''} ${!complete && i===current ? 'current' : ''}`}><span>第一年</span><b>{season}</b><small>{Math.min(perSeason,Math.max(0,time.total_actions-i*perSeason))} / {perSeason}</small></div>)}</div> }
 
 function EventSheet({ event, busy, eventState, onChoice, onClose }) {
   const typeIcon = event.type === '战斗' ? Sword : event.type === '命运' ? Sparkles : Compass
   const Icon = typeIcon
   const intensityLabel = {low:'低张力',medium:'中张力',high:'高张力',climax:'高潮'}
   return <div className="sheet-backdrop"><section className={`event-sheet ${event.type === '战斗' ? 'battle' : ''}`}>
-    <div className="sheet-handle"/><button className="sheet-close" onClick={onClose}><X size={18}/></button>
+    <div className="sheet-handle"/>{!event.finale_stage && !event.chapter_finale && <button className="sheet-close" onClick={onClose}><X size={18}/></button>}
     <span className="event-type"><Icon size={15}/>{event.type}事件</span><h2>{event.title}</h2>
     {debugMode && event.director && <div className="director-badge"><span>事件编排 · {event.director.categoryLabel}</span><b>{event.director.intentLabel} · {intensityLabel[event.director.intensity] || event.director.intensity}</b></div>}
     {debugMode && event.actionDebug && <details className="dynamic-components"><summary>行动候选信息</summary><pre>{JSON.stringify(event.actionDebug, null, 2)}</pre></details>}
     {debugMode && event.narrativeAuthorityDebug && <details className="dynamic-components"><summary>叙事信封、AI提案与拒绝记录</summary><pre>{JSON.stringify(event.narrativeAuthorityDebug, null, 2)}</pre></details>}
-    {event.boss && <div className="boss-card"><span>{event.boss.title}</span><h3>{event.boss.name}</h3><p>{event.boss.description}</p><div><b>威胁 · 致命</b><b>关键检定 · 4 个节点</b></div></div>}
+    {event.boss && <div className="boss-card"><span>{event.boss.title}</span><h3>{event.boss.name}</h3><p>{event.boss.description}</p><div><b>威胁 · 致命</b><b>终章 · 第 4 幕</b></div></div>}
     <div className={`event-copy ${event.streaming ? 'is-streaming' : ''}`} aria-live="polite">{(event.paragraphs?.length ? event.paragraphs : event.text ? event.text.split('\n\n') : []).map((p,i) => <p className="stream-paragraph" key={`${i}-${p.slice(0,12)}`}>{p}</p>)}{!event.text && <div className="world-whisper"><i/><span>{event.type === '战斗' ? '敌人正在逼近。你调整呼吸，四周逐渐安静下来。' : '风从近处掠过。某种变化正在显露轮廓。'}</span></div>}</div>
-    {event.type === '战斗' && <div className="battle-warning"><Sword size={17}/><span>战斗将作为 {event.chapter_finale ? '4 个' : '2 个'}关键检定节点处理；本次选择决定当前节点局势。</span></div>}
+    {event.type === '战斗' && <div className="battle-warning"><Sword size={17}/><span>{event.chapter_finale ? '这是第一章终章的最后一次关键检定；本次选择决定帕拉斯的结局。' : '战斗将作为 2 个关键检定节点处理；本次选择决定当前节点局势。'}</span></div>}
     <div className={`event-choices ${eventState === 'CHOICES_AVAILABLE' ? 'available' : ''}`}>{event.choices.map((choice, index) => { const noCheck=choice.assessment?.requires_check === false || choice.requiresCheck === false; return <button style={{animationDelay:`${index * .08}s`}} disabled={busy || eventState !== 'CHOICES_AVAILABLE'} onClick={() => onChoice(index)} key={choice.text}><span>{String.fromCharCode(65+index)}</span><div className="choice-copy"><b>{choice.text}</b><small>{choice.hint}</small><div className="choice-assessment"><em className={`risk-${choice.assessment?.risk || choice.risk}`}>风险 · {choice.assessment?.risk || choice.risk}</em><em>{noCheck ? '无需检定 · 结果明确' : `${choice.assessment.attribute_label} · 成功率 ${choice.assessment.final_probability}%`}</em>{choice.lethal && <em className="risk-致命">失败后果 · 可能死亡</em>}{choice.assessment?.applied_modifiers?.map((modifier,i)=><em key={i}>{modifier.label} {modifier.value>=0?'+':''}{modifier.value}{modifier.mode==='percent'?'%':''}</em>)}</div></div><ChevronRight size={18}/></button> })}</div>
     <p className="fate-note"><LockKeyhole size={12}/>选择后将显示属性、命运、关系与物品的完整变化</p>
   </section></div>

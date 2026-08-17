@@ -87,6 +87,11 @@ class WorldThreadService:
             if world_time - thread["lastProgressAt"] < self._interval(thread["urgency"]):
                 continue
             next_stage = min(thread["maxStage"], thread["stage"] + 1)
+            schedule = thread.get("chapterStageSchedule", []) if state.get("chapter") == 1 and not state.get("chapter_complete") else []
+            if schedule:
+                stage_cap = max((item["maxStage"] for item in schedule if world_time >= item["at"]), default=0)
+                if next_stage > stage_cap:
+                    continue
             required_awareness = 60 if next_stage == thread["maxStage"] - 1 else 80 if next_stage == thread["maxStage"] else 0
             signal = self._signal(thread, next_stage)
             if required_awareness and thread["awareness"] < required_awareness:
@@ -110,6 +115,20 @@ class WorldThreadService:
                 self._resolve(world, thread)
         world["recentSignals"] = (world.get("recentSignals", []) + emitted)[-8:]
         return emitted
+
+    def finalize_for_chapter(self, state: dict[str, Any], thread_id: str, *, favorable: bool) -> dict[str, Any]:
+        """Close a chapter thread at an authored finale beat without waiting for natural timing."""
+        self.normalize(state)
+        world = state["worldState"]
+        thread = next((item for item in world["activeThreads"] if item["id"] == thread_id), None)
+        if not thread:
+            raise ValueError("未知的世界线程")
+        if not thread.get("resolved"):
+            thread["stage"] = thread["maxStage"]
+            thread["progress"] = thread["maxStage"]
+            thread["selectedOutcome"] = copy.deepcopy(thread["interventionOutcome"] if favorable else thread["naturalOutcome"])
+            self._resolve(world, thread)
+        return copy.deepcopy(thread.get("resolvedOutcome", {}))
 
     def _resolve(self, world: dict[str, Any], thread: dict[str, Any]) -> None:
         outcome = thread["selectedOutcome"] or thread["naturalOutcome"]

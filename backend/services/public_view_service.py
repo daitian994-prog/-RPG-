@@ -52,7 +52,7 @@ class PublicViewService:
         result["knownWorldThreads"] = self._known_threads(game)
         result["focusedWorldTopics"] = list(game.get("directorState", {}).get("focus", []))
         for key in (
-            "worldState", "directorState", "pendingEvent", "aiNarratorDebug", "stateChangeLog",
+            "worldState", "directorState", "pendingEvent", "chapterFinale", "aiNarratorDebug", "stateChangeLog",
             "check_state_version", "heroActors", "heroActionLog", "heroEncounter",
             "narrativeAuthorityDebug",
         ):
@@ -78,7 +78,7 @@ class PublicViewService:
     def event(self, event: dict[str, Any], *, debug: bool = False) -> dict[str, Any]:
         if debug:
             return event
-        allowed = {"id", "type", "title", "text", "boss", "chapter_finale", "streaming", "paragraphs"}
+        allowed = {"id", "type", "title", "text", "boss", "chapter_finale", "finale_stage", "lockChoicesUntilComplete", "streaming", "paragraphs"}
         result = {key: deepcopy(value) for key, value in event.items() if key in allowed}
         result["choices"] = []
         for choice in event.get("choices", []):

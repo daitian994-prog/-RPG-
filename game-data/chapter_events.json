@@ -1,5 +1,53 @@
 [
   {
+    "id": "chapter1_spirit_finale",
+    "type": "命运",
+    "chapter_only": true,
+    "finale_stage": "finale_spirit",
+    "locations": ["mountain_temple"],
+    "title": "暮钟与无名之树",
+    "finale_context": "终章第一幕：必须让灵体异常在本章形成局部结果，同时留下灵界源头尚未查明的后续钩子。",
+    "director": {"category":"world","intent":"revelation","intensity":"high","threadId":"spirit_anomaly"},
+    "text": "第一年最后一场雪落下前，山寺的暮钟在无人敲动时响了三次。你循声走进后院，看见村民们共同梦见的那棵无名之树正以半透明的根须穿过石阶。它并非要吞噬帕拉斯，而是在躲避灵界深处某种更大的震动；若无人替它选择落脚之处，梦境与现实会从今夜开始重叠。\n\n寺中的老人点燃最后一盏引魂灯，把决定交给了你。无论选择安抚、迁引或封闭，这场持续一年的异常都会在今夜告一段落；但树影投来的方向，仍指向艾欧尼亚更深处。",
+    "choices": [
+      {"text":"以青木枝安抚树灵，让它在断风森林落根","hint":"保护聚落，也给陌生灵体留下生路","requiresCheck":false,"risk":"低","chapter_effect":{"line":"spirit_anomaly","favorable":true,"summary":"你把失控的灵息引向远离聚落的林地，一处温和的新生灵地由此形成。"},"result":{"text":"青木枝与半透明根须相触时，暮钟终于停下。树影越过山坡，缓慢退向断风森林。","personality":{"peace":4,"spirit":5},"relations":{"elder":8,"healer":6},"memory":"你为无名树灵在断风森林找到了新的落脚处。"}},
+      {"text":"借山寺旧阵封住裂隙，先让帕拉斯恢复安宁","hint":"以明确代价换取眼前安全","requiresCheck":false,"risk":"中","chapter_effect":{"line":"spirit_anomaly","favorable":false,"summary":"你封住了蔓延的裂隙，帕拉斯重归安宁，但山寺下留下一道沉睡的灵性伤痕。"},"result":{"text":"石阶上的旧纹逐一点亮，树影被收进山寺地底。最后一根枝条消失前，遥远林海传来了一声回应。","personality":{"power":3,"destiny":4},"relations":{"elder":10,"smith":5},"memory":"你用山寺旧阵封住了帕拉斯的灵界裂隙。"}},
+      {"text":"与树灵立约，允许它每年冬末短暂归来","hint":"建立边界，把异常变成可以守望的约定","requiresCheck":false,"risk":"中","chapter_effect":{"line":"spirit_anomaly","favorable":true,"summary":"你与树灵定下冬末之约，异常不再失控，村庄也多了一项必须世代守护的承诺。"},"result":{"text":"你把名字留在引魂灯旁。无名之树收拢根须，只留下一个每年冬末都会发芽的印记。","personality":{"spirit":4,"destiny":4},"relations":{"elder":7,"healer":7},"memory":"你与无名树灵立下了冬末归来的约定。"}}
+    ]
+  },
+  {
+    "id": "chapter1_yasuo_finale",
+    "type": "成长",
+    "chapter_only": true,
+    "finale_stage": "finale_yasuo",
+    "locations": ["war_ruins"],
+    "title": "风留下的名字",
+    "finale_context": "终章第二幕：亚索承认玩家，但必须保留流浪者身份并在本章结束后离开。",
+    "director": {"category":"hero","intent":"relationship","intensity":"high","heroId":"yasuo","heroName":"亚索"},
+    "text": "战争遗迹上只剩折断的石柱与积雪。亚索站在旧战场中央，脚边压着一张从诺克萨斯斥候身上取下的进军图。过去一年里，他曾是远处的风声、偶尔出现的背影，也是几次危机中没有替你做决定的人。\n\n『血旗今晚会到帕拉斯。』他把地图递给你，随后按住腰间的剑，『我会拦住侧翼，但我不会替一个村庄决定它该成为什么。等天亮以后，我也该继续走了。』这一次，你可以决定你们以怎样的关系走进最后一战。",
+    "choices": [
+      {"text":"请他并肩而战，但把帕拉斯的决定留给自己","hint":"彼此承认，而非依赖英雄","requiresCheck":false,"risk":"低","chapter_effect":{"heroChoice":"equals","summary":"你与亚索以平等同伴的身份走进终战；天亮后，他将带着对你的认可继续流浪。"},"result":{"text":"亚索看了你片刻，随后把进军图完整交到你手中。『很好。风可以帮你，但路得由你自己走。』","personality":{"freedom":4,"power":3},"relations":{"companion":8},"memory":"你拒绝依赖英雄，与亚索以同行者的身份走进终战。"}},
+      {"text":"请他保护撤离的人，正面战场由自己承担","hint":"把最危险的位置留给自己","requiresCheck":false,"risk":"中","chapter_effect":{"heroChoice":"guardian","summary":"你把村民托付给亚索，独自承担正面防线；他记住了你的担当，也留下再次相见的承诺。"},"result":{"text":"他没有劝阻，只把斗笠往下压了压。『那就活着守到我回来。』","personality":{"peace":4,"destiny":3},"relations":{"elder":6,"companion":6},"memory":"你把撤离村民托付给亚索，自己承担了正面战场。"}},
+      {"text":"坦白自己仍会害怕，请他教你如何在风中站稳","hint":"承认软弱，换取一句真正有用的提醒","requiresCheck":false,"risk":"低","chapter_effect":{"heroChoice":"honest","summary":"你坦白了恐惧，亚索教你的不是剑招，而是在失去退路时仍能选择的呼吸。"},"result":{"text":"亚索没有笑。他让你听雪落在断刃上的声音：『害怕不是退路。忘了自己为何站着，才是。』","personality":{"peace":3,"spirit":3},"relations":{"healer":4,"companion":8},"memory":"亚索曾教你在恐惧中听清自己的呼吸。"}}
+    ]
+  },
+  {
+    "id": "chapter1_defense_finale",
+    "type": "策略",
+    "chapter_only": true,
+    "finale_stage": "finale_defense",
+    "locations": ["pallas"],
+    "title": "血旗到来之前",
+    "finale_context": "终章第三幕：玩家用一整年的关系与调查为帕拉斯布防，选择应当为最终战提供真实优势。",
+    "director": {"category":"world","intent":"decision","intensity":"climax","threadId":"noxian_remnants"},
+    "text": "进军图摊在药庐长桌上时，帕拉斯没有陷入混乱。铁匠已经封住北门的薄弱处，猎人记下每条林间小路，老人们把孩子送往山寺，受过你帮助的人也各自站到了能够站的位置。过去一年的每一次调查、休息与选择，都在这一夜变成具体的人和物。\n\n远处第一支火把越过山脊。你们只来得及完成一项最重要的准备；它不会替你赢下战斗，却会让帕拉斯以你选择的方式迎接血旗。",
+    "choices": [
+      {"text":"疏散老弱，并把药庐改成后方救护点","hint":"降低伤亡，让防线可以承受失败","requiresCheck":false,"risk":"低","chapter_effect":{"preparation":"evacuation","strength":2,"summary":"你先保住了最脆弱的人；无论终战胜负，帕拉斯都不会在一夜之间失去未来。"},"result":{"text":"灯火沿着通往山寺的小路一盏盏亮起，药师把最后一卷绷带放到触手可及的地方。","personality":{"peace":5},"relations":{"healer":10,"elder":7},"memory":"你在血旗到来前先完成了村民疏散。"}},
+      {"text":"在北门布置伏击，先摧毁敌军的重甲队","hint":"以情报换取终战先机","requiresCheck":false,"risk":"中","chapter_effect":{"preparation":"ambush","strength":3,"summary":"你利用一年的调查布下伏击，残军最锋利的重甲队在进村前便遭到重创。"},"result":{"text":"猎人们熄灭火把潜入雪地，铁匠亲手把绊索固定在北门外最后一根木桩上。","personality":{"power":4,"destiny":3},"relations":{"hunter":10,"smith":8},"memory":"你在北门外为诺克萨斯重甲队布下了伏击。"}},
+      {"text":"把山寺灵灯带到村口，让土地守住最后边界","hint":"让已经安定的灵息加入防线","requiresCheck":false,"risk":"中","chapter_effect":{"preparation":"spirit_ward","strength":2,"summary":"你让灵灯与土地形成守护边界，血旗军的杀意在踏进帕拉斯时第一次发生动摇。"},"result":{"text":"灵灯被挂上村口时没有火焰，雪地却泛起温暖的青色微光。","personality":{"spirit":5,"peace":2},"relations":{"elder":8,"healer":5},"memory":"你让山寺灵灯成为帕拉斯最后的守护边界。"}}
+    ]
+  },
+  {
     "id": "chapter1_boss",
     "type": "战斗",
     "chapter_only": true,

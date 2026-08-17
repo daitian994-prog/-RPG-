@@ -374,6 +374,9 @@ class AIService:
 
     def stream_event(self, template: dict[str, Any], game: dict[str, Any], location: dict[str, Any]) -> Iterator[str]:
         """Return validated prose; program-owned choices remain outside the model output."""
+        if template.get("chapter_only"):
+            yield template["text"]
+            return
         yield self.generate_event(template, game, location, narrate=True)["text"]
 
     def generate_resolution(
