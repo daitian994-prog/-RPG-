@@ -63,7 +63,12 @@ $branch = (& $git branch --show-current).Trim()
 if ($branch -ne "main") { throw "当前分支是 $branch。为避免发布到错误环境，请先切换到 main 分支。" }
 
 $status = @(& $git status --porcelain)
-if (-not $DryRun -and -not $status) { throw "当前没有需要发布的项目修改。" }
+if (-not $DryRun -and -not $status) {
+    Write-Host ""
+    Write-Host "当前项目已经全部发布，没有新的修改需要上传。" -ForegroundColor Green
+    Write-Host "等下次修改过游戏后，再双击本程序即可。" -ForegroundColor Gray
+    exit 0
+}
 $unsafe = @($status | Where-Object {
     ($_ -match '(^|[/\\])\.env($|\.)' -and $_ -notmatch '\.env\.example$') -or
     $_ -match '\.(db|sqlite|sqlite3|log)$' -or
