@@ -1,0 +1,11 @@
+{
+  "name": "runeterra-ai-rpg",
+  "private": true,
+  "version": "0.3.9",
+  "packageManager": "pnpm@10.28.1",
+  "scripts": {
+    "build": "pnpm --dir frontend run build",
+    "dev": "pnpm --dir frontend run dev",
+    "preview": "pnpm --dir frontend run preview"
+  }
+}

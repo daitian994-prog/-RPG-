@@ -1,6 +1,6 @@
 # 《无名者：符文之地》
 
-当前版本：**v0.3.8**。版本创建、离线备份与安全恢复方法见 [版本说明.md](版本说明.md)。
+当前版本：**v0.3.9**。版本创建、离线备份与安全恢复方法见 [版本说明.md](版本说明.md)。
 
 阶段4已把 World Engine、Event Director、事件选择、统一检定、Outcome 写回和 AI Narrator 接成完整闭环。AI 只接收结构化 `EventContext` 并输出经过契约校验的叙事；所有概率、随机数、结果档位、奖励、关系和世界线程变化仍由程序决定。人物页的“完整闭环 Debug”可查看最近一次 Selector、Check、Outcome、AI 校验及 `StateChangeLog`。
 
@@ -98,8 +98,8 @@ npm run build
 ```text
 Framework Preset: Vite
 Root Directory: runeterra-ai-rpg（若仓库根目录就是本目录则留空）
-Install Command: pnpm --dir frontend install --frozen-lockfile
-Build Command: pnpm --dir frontend run build
+Install Command: pnpm install --frozen-lockfile
+Build Command: pnpm run build
 Output Directory: frontend/dist
 ```
 

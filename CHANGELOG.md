@@ -1,5 +1,10 @@
 # 更新记录
 
+## 0.3.9 — 2026-08-17
+
+- 将 pnpm 锁文件提升到仓库根目录并声明标准 workspace，使 Vercel 能在安装阶段正确识别锁文件。
+- 在根 `package.json` 固定 Vercel 支持的 pnpm 10.28.1，并统一根目录安装与构建命令。
+
 ## 0.3.8 — 2026-08-17
 
 - 新增 Vercel Python Function 入口、Vite 构建与 SPA/API rewrite 配置，项目根目录可直接导入 Vercel。
