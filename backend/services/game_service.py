@@ -9,6 +9,8 @@ from typing import Any
 from backend.database.db import init_db, load_game, save_game
 from backend.services.ai_service import AIService
 from backend.services.event_director_service import EventDirectorService
+from backend.services.event_context_service import EventContextService
+from backend.services.outcome_engine import OutcomeEngine
 from backend.services.world_thread_service import WorldThreadService
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "game-data"
@@ -40,6 +42,8 @@ class GameService:
         self.ai = AIService()
         self.world_threads = WorldThreadService()
         self.director = EventDirectorService()
+        self.event_context = EventContextService()
+        self.outcomes = OutcomeEngine()
         self.locations = self._read("locations.json")
         self.npcs = self._read("npc.json")
         self.events = self._read("events.json")
@@ -212,6 +216,13 @@ class GameService:
             changed = True
         if self.director.normalize(state):
             changed = True
+        for key, default in {
+            "heroRelationships": {}, "stateChangeLog": [],
+            "aiNarratorDebug": {"source": "none", "validation": {"valid": True, "errors": []}},
+        }.items():
+            if key not in state:
+                state[key] = default
+                changed = True
         self._sync_character_layers(state)
         return changed
 
@@ -264,8 +275,12 @@ class GameService:
             "gameVersion": PROJECT_VERSION,
             "worldState": self.world_threads.initial_state(),
             "directorState": self.director.initial_state(),
+            "heroRelationships": {},
+            "stateChangeLog": [],
+            "aiNarratorDebug": {"source": "none", "validation": {"valid": True, "errors": []}},
         }
         self._sync_character_layers(state)
+        self.outcomes.record(state, "new_game", self.outcomes.snapshot(state), metadata={"version": PROJECT_VERSION})
         save_game(game_id, state)
         return state
 
@@ -297,6 +312,7 @@ class GameService:
 
     def travel(self, game_id: str, location_id: str, *, narrate: bool = True) -> tuple[dict[str, Any], dict[str, Any]]:
         state = self.get(game_id)
+        before = self.outcomes.snapshot(state)
         if state.get("chapter_phase") == "invasion" and not state.get("chapter_complete"):
             return state, self._chapter_boss_event(state, narrate=narrate)
         if state["action_points"] <= 0:
@@ -334,6 +350,7 @@ class GameService:
         selection["directorContext"] = self.director.context(state, selection, location["name"])
         template["director"] = selection
         template["directorPrelude"] = selection["directorContext"]
+        template["eventContext"] = self.event_context.build(state, location, selection, template)
         event = self.ai.generate_event(template, state, location, narrate=narrate)
         event["world_state_version"] = self.state_version(state)
         event["event_seed"] = selection["seed"]
@@ -342,8 +359,10 @@ class GameService:
             "id": selection["eventId"], "templateId": selection["templateId"],
             "eventSeed": selection["seed"], "director": event["director"],
             "directorPrelude": selection["directorContext"],
+            "eventContext": template["eventContext"],
         }
         self.director.record_selection(state, selection)
+        self.outcomes.record(state, "travel_and_select_event", before, metadata={"locationId": location_id, "eventId": selection["eventId"], "candidateId": selection["candidateId"]})
         save_game(game_id, state)
         return state, event
 
@@ -354,20 +373,23 @@ class GameService:
             seed = selection["seed"]
             director = selection
             prelude = selection.get("directorContext", "")
+            event_context = selection.get("eventContext")
         elif pending.get("id") == event_id:
             template_id = pending["templateId"]
             seed = pending["eventSeed"]
             director = pending.get("director", {})
             prelude = pending.get("directorPrelude", "")
+            event_context = pending.get("eventContext")
         else:
             template_id = event_id
             seed = event_id
             director = {}
             prelude = ""
+            event_context = None
         base = next((event for event in self.events if event["id"] == template_id), None)
         if not base:
             raise ValueError("事件已经消散")
-        return {**base, "id": event_id, "template_id": template_id, "event_seed": seed, "director": director, "directorPrelude": prelude}
+        return {**base, "id": event_id, "template_id": template_id, "event_seed": seed, "director": director, "directorPrelude": prelude, "eventContext": event_context}
 
     def _chapter_boss_event(self, state: dict[str, Any], *, narrate: bool = True) -> dict[str, Any]:
         template = next(event for event in self.events if event["id"] == "chapter1_boss")
@@ -389,7 +411,10 @@ class GameService:
         state = self.get(game_id)
         template = self._event_template(state, event_id)
         location = next(location for location in self.locations if location["id"] == state["location"])
-        return self.ai.stream_event(template, state, location)
+        def stream_and_persist():
+            yield from self.ai.stream_event(template, state, location)
+            save_game(game_id, state)
+        return stream_and_persist()
 
     @staticmethod
     def _merge_changes(target: dict[str, int], source: dict[str, int]) -> None:
@@ -398,6 +423,7 @@ class GameService:
 
     def resolve(self, game_id: str, event_id: str, choice_index: int) -> tuple[dict[str, Any], dict[str, Any]]:
         state = self.get(game_id)
+        before = self.outcomes.snapshot(state)
         previous = state.get("last_resolution")
         if previous and previous.get("event_id") == event_id:
             return state, previous
@@ -525,8 +551,10 @@ class GameService:
                 state["time"]["season_index"] = 0
                 state["season"] = "第二年 · 春 · 战后"
 
+        director = {**event.get("director", {}), "eventId": event_id}
+        world_feedback = self.outcomes.apply_world_feedback(state, director, outcome, choice)
         location = next(x for x in self.locations if x["id"] == state["location"])
-        narrative = self.ai.generate_resolution(event, choice, state, location, battle_text, outcome)
+        narrative = self.ai.generate_resolution(event, choice, state, location, battle_text, outcome, world_feedback)
         resolution = {
             "event_id": event_id,
             "event_title": event["title"].format(location=location["name"]),
@@ -543,6 +571,7 @@ class GameService:
             "statuses": granted_statuses,
             "clues": granted_clues,
             "chapter_complete": state.get("chapter_complete", False),
+            "worldFeedback": world_feedback,
         }
         if event_id not in state["completed_events"]:
             state["completed_events"].append(event_id)
@@ -554,11 +583,14 @@ class GameService:
         state["player_state_version"] = int(state.get("player_state_version", 1)) + 1
         state.pop("check_state_version", None)
         self._sync_character_layers(state)
+        change_entry = self.outcomes.record(state, "resolve_event", before, metadata={"eventId": event_id, "choiceIndex": choice_index, "tier": outcome["code"]})
+        resolution["stateChangeLog"] = change_entry
         save_game(game_id, state)
         return state, resolution
 
     def recover(self, game_id: str, method: str = "rest") -> tuple[dict[str, Any], dict[str, Any]]:
         state = self.get(game_id)
+        snapshot = self.outcomes.snapshot(state)
         if state["location"] != "pallas":
             raise ValueError("只有安全地点才能进行稳定休息")
         if state.get("chapter_phase") == "invasion" and not state.get("chapter_complete"):
@@ -580,11 +612,13 @@ class GameService:
         state["player_state_version"] = int(state.get("player_state_version", 1)) + 1
         state["log"].append("你在帕拉斯安全休息。疲惫逐渐退去，伤势得到稳定处理；这段恢复消耗了一次行动。")
         self._sync_character_layers(state)
+        self.outcomes.record(state, "recover", snapshot, metadata={"method": method})
         save_game(game_id, state)
         return state, recovery
 
     def intervene_world_thread(self, game_id: str, thread_id: str, strategy: str) -> tuple[dict[str, Any], dict[str, Any]]:
         state = self.get(game_id)
+        snapshot = self.outcomes.snapshot(state)
         if state["action_points"] <= 0:
             raise ValueError("本季行动次数已经用完")
         result = self.world_threads.intervene(state, thread_id, strategy)
@@ -595,23 +629,28 @@ class GameService:
         state["last_resolution"] = None
         state["player_state_version"] = int(state.get("player_state_version", 1)) + 1
         state["log"].append(result["message"])
+        self.outcomes.record(state, "world_thread_intervention", snapshot, metadata={"threadId": thread_id, "strategy": strategy})
         save_game(game_id, state)
         return state, result
 
     def focus_world_topic(self, game_id: str, topic_id: str, focused: bool) -> tuple[dict[str, Any], dict[str, Any]]:
         state = self.get(game_id)
+        snapshot = self.outcomes.snapshot(state)
         result = self.director.set_focus(state, topic_id, focused)
         state["player_state_version"] = int(state.get("player_state_version", 1)) + 1
         state["log"].append(result["message"])
+        self.outcomes.record(state, "set_world_focus", snapshot, metadata={"topicId": topic_id, "focused": focused})
         save_game(game_id, state)
         return state, result
 
     def dialogue(self, game_id: str, npc_id: str) -> tuple[dict[str, Any], str]:
         state = self.get(game_id)
+        snapshot = self.outcomes.snapshot(state)
         npc = next((n for n in self.npcs if n["id"] == npc_id), None)
         if not npc:
             raise ValueError("找不到这个人")
         text = self.ai.generate_dialogue(npc, state["relationships"][npc_id])
         state["log"].append(text)
+        self.outcomes.record(state, "dialogue", snapshot, metadata={"npcId": npc_id})
         save_game(game_id, state)
         return state, text

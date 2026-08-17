@@ -9,6 +9,7 @@ from typing import Any
 from backend.services.deepseek_service import DeepSeekError, DeepSeekService
 from backend.services.lore_service import LoreService
 from backend.services.check_engine import CheckEngine, CheckRequest, Modifier
+from backend.services.narrator_contract import NarratorContract
 
 
 class AIService:
@@ -27,6 +28,7 @@ class AIService:
         self.remote_ai = DeepSeekService()
         self.lore = LoreService()
         self.check_engine = CheckEngine()
+        self.narrator_contract = NarratorContract()
         style_path = Path(__file__).resolve().parents[2] / "game-data" / "narrative_style.json"
         self.narrative_style = json.loads(style_path.read_text(encoding="utf-8"))
 
@@ -105,6 +107,46 @@ class AIService:
             return self._normalize_perspective(result["text"], player_name)
         except DeepSeekError:
             return None
+
+    def _contract_narrate(
+        self, *, kind: str, facts: dict[str, Any], game: dict[str, Any], fallback: str,
+        event_type: str, location_id: str, temperature: float, max_tokens: int, remote: bool = True,
+    ) -> str:
+        """Request and validate the four-field narrator protocol; fall back atomically."""
+        contract_input = {
+            "eventContext": facts.get("eventContext"),
+            "fixedFacts": facts,
+            "outputSchema": {"narrative": "string", "choicePresentation": [], "npcDialogue": [], "flavorTags": []},
+        }
+        debug = {"phase": kind, "input": contract_input, "source": "local", "rawOutput": None}
+        if remote and os.getenv("RUNETERRA_DISABLE_REMOTE_AI") != "1" and self.remote_ai.configured:
+            try:
+                result = self.remote_ai.generate(
+                    system=self._style_prompt(
+                        kind=kind, event_type=event_type, location_id=location_id,
+                        chapter_phase=game.get("chapter_phase", "journey"),
+                    ) + "\n最终输出必须是严格JSON对象，且只能含 narrative、choicePresentation、npcDialogue、flavorTags 四个字段。",
+                    prompt=json.dumps(contract_input, ensure_ascii=False), temperature=temperature, max_tokens=max_tokens,
+                )
+                debug["rawOutput"] = result["text"]
+                validation = self.narrator_contract.validate(result["text"])
+                debug["validation"] = validation
+                if validation["valid"]:
+                    normalized = self._normalize_perspective(validation["output"]["narrative"], game["player"]["name"])
+                    if normalized:
+                        debug["source"] = "ai_validated"
+                        game["aiNarratorDebug"] = debug
+                        return normalized
+                    validation["valid"] = False
+                    validation["errors"].append("叙事视角不是第二人称")
+            except DeepSeekError as exc:
+                debug["validation"] = {"valid": False, "errors": [str(exc)]}
+        else:
+            local_raw = json.dumps({"narrative": fallback, "choicePresentation": [], "npcDialogue": [], "flavorTags": []}, ensure_ascii=False)
+            debug["rawOutput"] = local_raw
+            debug["validation"] = self.narrator_contract.validate(local_raw)
+        game["aiNarratorDebug"] = debug
+        return fallback
 
     def _check_request(self, event: dict[str, Any], choice: dict[str, Any], game: dict[str, Any], choice_index: int) -> CheckRequest:
         personality_effects = choice.get("result", {}).get("personality", {})
@@ -263,14 +305,8 @@ class AIService:
             choice["assessment"] = self.assess_choice(event, choice, game, index)
         event_temperatures = {"日常": 0.60, "NPC": 0.60, "成长": 0.58, "探索": 0.64, "命运": 0.70, "战斗": 0.55}
         is_boss = bool(event.get("chapter_only"))
-        ai_text = self._narrate(
-            kind="boss_event" if is_boss else "event",
-            event_type=event["type"],
-            location_id=location["id"],
-            chapter_phase=game.get("chapter_phase", "journey"),
-            player_name=game["player"]["name"],
-            temperature=event_temperatures.get(event["type"], 0.62),
-            facts={
+        facts = {
+                "eventContext": template.get("eventContext"),
                 "事件标题": event["title"],
                 "事件类型": event["type"],
                 "地点": location["name"],
@@ -288,14 +324,20 @@ class AIService:
                 "可选行动": [choice["text"] for choice in event["choices"]],
                 "官方世界观检索": self.lore.context_for_event(location["id"], event["type"], opening),
                 "硬性边界": "程序已经决定Thread、Stage、Location、Intent与强度。只扩写这次局部现场，不修改选项，不替你行动，不推进世界阶段，不创造重大世界结果，不提前结算。",
-            },
-            max_tokens=820 if is_boss else 700,
-        ) if narrate else None
-        if ai_text:
-            event["text"] = ai_text
-            event["narrative_source"] = "ai"
+            }
+        if narrate:
+            event["text"] = self._contract_narrate(
+                kind="boss_event" if is_boss else "event", facts=facts, game=game, fallback=event["text"],
+                event_type=event["type"], location_id=location["id"],
+                temperature=event_temperatures.get(event["type"], 0.62), max_tokens=820 if is_boss else 700,
+            )
         else:
-            event["narrative_source"] = "local"
+            self._contract_narrate(
+                kind="event", facts=facts, game=game, fallback=event["text"], event_type=event["type"],
+                location_id=location["id"], temperature=0.0, max_tokens=64, remote=False,
+            )
+        event["narrative_source"] = game.get("aiNarratorDebug", {}).get("source", "local")
+        event["eventContext"] = template.get("eventContext")
         return event
 
     def narrate_event(self, template: dict[str, Any], game: dict[str, Any], location: dict[str, Any]) -> str:
@@ -303,43 +345,8 @@ class AIService:
         return self.generate_event(template, game, location, narrate=True)["text"]
 
     def stream_event(self, template: dict[str, Any], game: dict[str, Any], location: dict[str, Any]) -> Iterator[str]:
-        """Stream prose only. The template, choices and assessments remain authoritative."""
-        if os.getenv("RUNETERRA_DISABLE_REMOTE_AI") == "1" or not self.remote_ai.configured:
-            yield self.generate_event(template, game, location, narrate=False)["text"]
-            return
-        opening = template["text"].format(name=game["player"]["name"], location=location["name"])
-        director = template.get("director", {})
-        director_prelude = template.get("directorPrelude", "")
-        facts = {
-            "事件标题": template["title"].format(location=location["name"]),
-            "事件类型": template["type"],
-            "地点": location["name"],
-            "当前时间": game.get("season", "未知"),
-            "主角称谓": "你",
-            "基础事件": opening,
-            "Director结构化约束": {
-                "category": director.get("category"), "thread": director.get("threadId"),
-                "stage": director.get("threadStage"), "stageFact": director.get("threadStageLabel"),
-                "intent": director.get("intent"), "intensity": director.get("intensity"),
-                "localConstraint": director_prelude,
-            },
-            "玩家性格": game["player"]["personality"],
-            "已有记忆": game["player"].get("memories", [])[-3:],
-            "可选行动": [choice["text"] for choice in template["choices"]],
-            "官方世界观检索": self.lore.context_for_event(location["id"], template["type"], opening),
-            "硬性边界": "程序已经决定Thread、Stage、Location、Intent与强度。只扩写这次局部现场，不修改选项，不替你行动，不推进世界阶段，不创造重大世界结果，不提前结算。段落之间使用空行。",
-        }
-        try:
-            yield from self.remote_ai.stream(
-                system=self._style_prompt(
-                    kind="boss_event" if template.get("chapter_only") else "event",
-                    event_type=template["type"], location_id=location["id"], chapter_phase=game.get("chapter_phase", "journey")
-                ),
-                prompt=json.dumps(facts, ensure_ascii=False), temperature=0.62,
-                max_tokens=820 if template.get("chapter_only") else 700,
-            )
-        except DeepSeekError:
-            yield self.generate_event(template, game, location, narrate=False)["text"]
+        """Return validated prose; program-owned choices remain outside the model output."""
+        yield self.generate_event(template, game, location, narrate=True)["text"]
 
     def generate_resolution(
         self,
@@ -349,6 +356,7 @@ class AIService:
         location: dict[str, Any],
         battle_text: str = "",
         outcome: dict[str, Any] | None = None,
+        world_feedback: dict[str, Any] | None = None,
     ) -> str:
         consequence = choice["result"]["text"]
         reflections = {
@@ -383,14 +391,8 @@ class AIService:
         text += f"\n\n{reflections.get(event['type'], reflections['探索'])}"
         text += f" 此刻的{location['name']}看起来与片刻前没有区别，但你的道路已经留下新的偏转。"
         text += " 你把当时的声音、气味与每一个迟疑都记了下来，因为未来的某次相逢，或许会要求你再次回答今天的问题。"
-        ai_text = self._narrate(
-            kind="resolution",
-            event_type=event["type"],
-            location_id=location["id"],
-            chapter_phase=game.get("chapter_phase", "journey"),
-            player_name=game["player"]["name"],
-            temperature=0.54 if event["type"] == "战斗" else 0.58,
-            facts={
+        facts = {
+                "eventContext": event.get("eventContext"),
                 "事件": event["title"],
                 "地点": location["name"],
                 "主角称谓": "你",
@@ -398,15 +400,17 @@ class AIService:
                 "预设后果": consequence,
                 "结算": outcome or {"label": "固定结果"},
                 "战斗描述": battle_text,
+                "程序已写回的世界反馈": world_feedback or {},
                 "本地保底叙事": text,
                 "官方世界观检索": self.lore.context_for_event(
                     location["id"], event["type"], f"{event['title']} {consequence} {battle_text}"
                 ),
                 "硬性边界": "必须保持结算方向和代价，不新增补偿，不改变任何数值或物品。",
-            },
-            max_tokens=620,
+            }
+        return self._contract_narrate(
+            kind="resolution", facts=facts, game=game, fallback=text, event_type=event["type"],
+            location_id=location["id"], temperature=0.54 if event["type"] == "战斗" else 0.58, max_tokens=620,
         )
-        return ai_text or text
 
     def generate_dialogue(self, npc: dict[str, Any], relationship: dict[str, Any]) -> str:
         score = relationship.get("score", 0)
