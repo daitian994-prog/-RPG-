@@ -33,6 +33,19 @@ class LoreRepositoryTest(unittest.TestCase):
         lore = LoreService(self.repository)
         self.assertEqual(lore.champion("yasuo")["profile"], "后台即时更新测试")
 
+    def test_champion_listing_integrates_linked_story_summaries(self):
+        self.repository.create(
+            "stories",
+            "wind-story",
+            "风的故事",
+            {"preview": "亚索沿风而行。", "content": "完整正文不应进入人物卡片列表。", "related_characters": ["yasuo"]},
+        )
+        yasuo = next(record for record in self.repository.list_champions_with_stories() if record["id"] == "yasuo")
+        self.assertEqual(yasuo["story_count"], 1)
+        self.assertEqual(yasuo["stories"][0]["title"], "风的故事")
+        self.assertNotIn("content", yasuo["stories"][0])
+        self.assertEqual(self.repository.list_champions_with_stories("风的故事")[0]["id"], "yasuo")
+
     def test_create_delete_and_restart_preserve_user_content(self):
         self.repository.create("places", "test_place", "测试地点", {"id": "test_place", "summary": "自定义资料"})
         reopened = LoreRepository(self.db_path, LORE_DIR)

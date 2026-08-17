@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import hashlib
 import json
 import sqlite3
@@ -124,6 +126,37 @@ class LoreRepository:
                 (category, query.strip(), pattern, pattern, limit, offset),
             ).fetchall()
         return [self.public(row) for row in rows]
+
+    def list_champions_with_stories(self, query: str = "", limit: int = 200, offset: int = 0) -> list[dict[str, Any]]:
+        """Return hero records with their stories nested, while keeping story bodies normalized."""
+        champions = self.list("champions", "", 1000, 0)
+        stories = self.list("stories", "", 1000, 0)
+        query_text = query.strip().casefold()
+        enriched: list[dict[str, Any]] = []
+        for champion in champions:
+            configured_ids = set(champion["data"].get("story_ids") or [])
+            related = [
+                story for story in stories
+                if story["id"] in configured_ids or champion["id"] in (story["data"].get("related_characters") or [])
+            ]
+            related.sort(key=lambda story: (story["data"].get("release_date") or "", story["title"]), reverse=True)
+            summaries = [
+                {
+                    "id": story["id"],
+                    "title": story["title"],
+                    "author": story["data"].get("author", ""),
+                    "preview": story["data"].get("preview", ""),
+                    "minutes_to_read": story["data"].get("minutes_to_read"),
+                    "source_url": story["data"].get("source_url", ""),
+                    "updated_at": story["updated_at"],
+                }
+                for story in related
+            ]
+            record = {**champion, "stories": summaries, "story_count": len(summaries)}
+            searchable = json.dumps(record, ensure_ascii=False).casefold()
+            if not query_text or query_text in searchable:
+                enriched.append(record)
+        return enriched[offset:offset + limit]
 
     def get(self, category: str, record_id: str) -> dict[str, Any] | None:
         with self.connection() as conn:

@@ -137,8 +137,21 @@ def list_lore_records(category: str, q: str = "", limit: int = 200, offset: int 
     _validate_lore_category(category)
     return {
         "category": category,
-        "records": lore_repository.list(category, q, min(max(limit, 1), 500), max(offset, 0)),
+        "records": (
+            lore_repository.list_champions_with_stories(q, min(max(limit, 1), 500), max(offset, 0))
+            if category == "champions"
+            else lore_repository.list(category, q, min(max(limit, 1), 500), max(offset, 0))
+        ),
     }
+
+
+@router.get("/lore/{category}/{record_id}")
+def get_lore_record(category: str, record_id: str):
+    _validate_lore_category(category)
+    record = lore_repository.get(category, record_id)
+    if not record:
+        raise HTTPException(404, "知识库记录不存在。")
+    return {"record": record}
 
 
 @router.post("/lore/{category}", status_code=201)

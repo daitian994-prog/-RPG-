@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="/admin/styles.css?v=3" />
   <link rel="stylesheet" href="/admin/project-status.css?v=1" />
   <link rel="stylesheet" href="/admin/lore.css?v=4" />
-  <link rel="stylesheet" href="/admin/lore-visuals.css?v=5" />
+  <link rel="stylesheet" href="/admin/lore-visuals.css?v=7" />
   <link rel="stylesheet" href="/admin/source-links.css?v=4" />
   <link rel="stylesheet" href="/admin/map-alignment.css?v=8" />
   <link rel="stylesheet" href="/admin/associations.css?v=6" />
@@ -42,7 +42,7 @@
 
     <div id="loreView" hidden>
       <section class="lore-overview">
-        <div><p class="eyebrow">IONIA KNOWLEDGE BASE</p><h2>艾欧尼亚资料库</h2><p>英雄、地点、派系、历史和关系网均从数据库实时读取。</p></div>
+        <div><p class="eyebrow">IONIA KNOWLEDGE BASE</p><h2>艾欧尼亚资料库</h2><p>人物传记与人物故事已按英雄整合，地点、派系、历史和关系网均从数据库实时读取。</p></div>
         <div class="lore-total"><strong id="loreTotal">0</strong><span>条资料</span></div>
       </section>
       <section class="lore-toolbar">
@@ -88,7 +88,7 @@
     <section><h3 id="officialLoreShortLabel">内容简介</h3><p id="officialLoreShort"></p></section>
     <section><h3 id="officialLoreFullLabel">正文内容</h3><p id="officialLoreFull" class="official-full"></p></section>
     <section><h3 id="officialLoreModulesLabel">相关资料</h3><ul id="officialLoreModules" class="official-modules"></ul></section>
-    <div class="dialog-actions"><a id="officialLoreSource" class="ghost official-source-button" target="_blank" rel="noreferrer">打开中文官网来源</a><button type="button" class="primary" onclick="document.querySelector('#officialLoreDialog').close()">关闭</button></div>
+    <div class="dialog-actions"><a id="officialLoreSource" class="ghost official-source-button" target="_blank" rel="noreferrer">打开中文官网来源</a><button type="button" class="ghost" id="officialLoreEdit" hidden>编辑故事资料</button><button type="button" class="primary" onclick="document.querySelector('#officialLoreDialog').close()">关闭</button></div>
   </dialog>
 
   <dialog id="loreDialog"><form id="loreForm">
@@ -101,7 +101,7 @@
   </form></dialog>
 
   <div class="toast" id="toast"></div>
-  <script src="/admin/lore-visuals.js?v=13"></script>
-  <script src="/admin/app.js?v=12"></script>
+  <script src="/admin/lore-visuals.js?v=15"></script>
+  <script src="/admin/app.js?v=14"></script>
 </body>
 </html>
