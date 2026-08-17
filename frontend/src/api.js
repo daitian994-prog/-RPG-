@@ -1,5 +1,7 @@
+import { withDebug } from './debugMode'
+
 const request = async (path, options = {}) => {
-  const response = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...options })
+  const response = await fetch(withDebug(path), { headers: { 'Content-Type': 'application/json' }, ...options })
   const data = await response.json()
   if (!response.ok) throw new Error(data.detail || '旅途暂时中断')
   return data

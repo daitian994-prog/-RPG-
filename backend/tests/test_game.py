@@ -15,7 +15,7 @@ class GameLoopTest(unittest.TestCase):
         for event in pool:
             if event_type and event["type"] != event_type:
                 continue
-            if attribute and not any(choice["attribute"] == attribute for choice in event["choices"]):
+            if attribute and not any(choice.get("attribute") == attribute for choice in event["choices"]):
                 continue
             return event
         self.fail("未生成符合测试条件的动态事件")
@@ -47,7 +47,7 @@ class GameLoopTest(unittest.TestCase):
             game, event = self.service.travel(game["id"], "war_ruins", narrate=False)
         narrate.assert_not_called()
         self.assertEqual(game["location"], "war_ruins")
-        self.assertEqual(len(event["choices"]), 3)
+        self.assertIn(len(event["choices"]), {2, 3, 4})
         self.assertTrue(all("assessment" in choice for choice in event["choices"]))
         self.assertEqual(event["narrative_source"], "local")
 
@@ -72,7 +72,7 @@ class GameLoopTest(unittest.TestCase):
         self.assertTrue(game["player"]["inventory"][0]["description"])
         self.assertNotIn("bonuses", game["player"]["inventory"][0])
         self.assertIn("effects", game["player"]["inventory"][0])
-        self.assertEqual(game["gameVersion"], "0.3.11")
+        self.assertEqual(game["gameVersion"], "0.3.12")
 
     def test_world_thread_intervention_costs_time_and_persists(self):
         game = self.service.new_game(["peace", "power", "freedom", "spirit", "destiny", "peace"])
@@ -150,7 +150,7 @@ class GameLoopTest(unittest.TestCase):
         game = self.service.new_game(["peace", "power", "freedom", "spirit", "destiny", "freedom"])
         game["player"]["statuses"] = [{"id": "tense", "name": "紧张", "source": "伏击", "duration": 2, "modifiers": {"agility": -10}}]
         event = self._dynamic_event(game, attribute="agility")
-        index = next(i for i, choice in enumerate(event["choices"]) if choice["attribute"] == "agility")
+        index = next(i for i, choice in enumerate(event["choices"]) if choice.get("attribute") == "agility")
         assessment = self.service.ai.assess_choice(event, event["choices"][index], game, index)
         self.assertTrue(any(item["source"] == "status" and item["value"] == -10 for item in assessment["applied_modifiers"]))
 
@@ -258,8 +258,24 @@ class GameLoopTest(unittest.TestCase):
             game["worldState"]["worldTime"] = index
             events.extend(self.service.dynamic_events.generate_pool(game, location))
         self.assertGreater(len({event["id"] for event in events}), 200)
-        self.assertTrue(all(len(event["choices"]) == 3 for event in events))
+        self.assertTrue(all(2 <= len(event["choices"]) <= 4 for event in events))
         self.assertTrue(all("result" in choice for event in events for choice in event["choices"]))
+
+    def test_fifty_dynamic_events_have_varied_action_first_choices(self):
+        game = self.service.new_game(["peace"] * 6)
+        events = []
+        for index in range(50):
+            location = ["pallas", "windbreak", "war_ruins", "mountain_temple"][index % 4]
+            game["time"]["total_actions"] = index
+            game["worldState"]["worldTime"] = index
+            pool = self.service.dynamic_events.generate_pool(game, location)
+            events.append(pool[index % len(pool)])
+        choices = [choice for event in events for choice in event["choices"]]
+        self.assertEqual({len(event["choices"]) for event in events}, {2, 3, 4})
+        self.assertGreaterEqual(len({choice.get("attribute") for choice in choices if choice.get("attribute")}), 5)
+        self.assertGreaterEqual(sum(choice.get("requiresCheck") is False for choice in choices) / len(choices), 0.1)
+        self.assertTrue(all(choice.get("semanticAction") and choice.get("goal") and choice.get("approach") for choice in choices))
+        self.assertTrue(all(len({choice["text"] for choice in event["choices"]}) == len(event["choices"]) for event in events))
 
     def test_at_least_ten_events_use_distinct_core_attributes(self):
         game = self.service.new_game(["peace"] * 6)

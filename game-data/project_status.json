@@ -10,7 +10,7 @@
     {"name": "人物创建与成长", "status": "已完成", "details": "六次无属性标签的情境选择塑造五维人格；出生信息、六项核心能力、伤势、命运倾向、物品与关系持续写回存档。"},
     {"name": "时间、行动与生存", "status": "已完成", "details": "第一年按春夏秋冬推进，每季 3 点行动；行动、旅行、恢复、伤势与生命风险进入统一循环。"},
     {"name": "世界线程", "status": "已完成", "details": "世界线程拥有阶段、紧迫度、认知、干预和世界效果，不依赖玩家在场也能随时间推进。"},
-    {"name": "动态事件导演", "status": "已完成", "details": "常规事件不再从固定 20 个事件中抽取；系统按地点、时间、能力、伤势、线程、关注与张力即时组合事件。"},
+    {"name": "动态事件导演", "status": "已完成", "details": "常规事件不再从固定 20 个事件中抽取；系统即时组合现场，并先生成 2—4 条目标与策略不同的行动，再映射能力，支持无需检定与持有条件行动。"},
     {"name": "统一检定与结算", "status": "已完成", "details": "所有风险选择使用可解释的成功率和稳定 Seed，产生大成功、成功、部分成功、失败四级结果并写回状态。"},
     {"name": "AI 叙事契约", "status": "已完成", "details": "AI 只负责正文、选项表现、NPC 台词与气氛；概率、随机数、结果、奖励和线程推进由程序权威决定，失败自动回退本地叙事。"},
     {"name": "艾欧尼亚知识库", "status": "已完成", "details": "英雄卡片整合人物传记与关联故事；地点、派系、时间线、关系与来源存入 SQLite，可在管理器中检索、查看和维护。"},
@@ -19,7 +19,7 @@
     {"name": "本地与网页部署", "status": "已完成", "details": "本地 FastAPI + SQLite 单服务运行；Vercel 使用 Python Function、Vite 静态构建与 Runtime Cache。"}
   ],
   "architecture": [
-    {"layer": "玩家网页", "technology": "React + Vite", "responsibility": "人物创建、地图、事件、结算、人物与 Debug 页面"},
+    {"layer": "玩家网页", "technology": "React + Vite", "responsibility": "人物创建、地图、事件、结算与人物档案；开发视图仅在本地显式开启"},
     {"layer": "游戏 API", "technology": "FastAPI", "responsibility": "游戏状态机、旅行、动态事件、检定、线程、恢复、对话与叙事流"},
     {"layer": "本地持久化", "technology": "SQLite", "responsibility": "游戏存档、AI 节点、知识库与中文官网资料快照"},
     {"layer": "生产持久化", "technology": "Vercel Runtime Cache", "responsibility": "无状态函数环境中的试玩者 JSON 存档"},
@@ -49,6 +49,7 @@
       "事件 ID、选项、概率与结算结果全部以服务端返回为准。",
       "常规事件为程序化动态组合；chapter_events.json 只保存明确的章节终局事件。",
       "生产环境不暴露 /admin，AI 密钥只保存在服务端。",
+      "玩家接口默认使用公开投影，不下发导演候选、线程数值、随机种子或叙事校验记录。",
       "接口变更必须同步更新本页、CHANGELOG.md、VERSION 与前端 package 版本。"
     ]
   },

@@ -194,6 +194,13 @@ class AIService:
 
     def assess_choice(self, event: dict[str, Any], choice: dict[str, Any], game: dict[str, Any], choice_index: int) -> dict[str, Any]:
         """Return an informed, repeatable risk forecast before the player commits."""
+        if choice.get("requiresCheck") is False:
+            return {
+                "requires_check": False, "attribute": None, "attribute_label": "无需检定", "ability": None,
+                "difficulty": None, "base_probability": 100, "final_probability": 100,
+                "applied_modifiers": [], "primary_trait": max(choice.get("result", {}).get("personality", {"destiny": 1}), key=choice.get("result", {}).get("personality", {"destiny": 1}).get),
+                "stat": None, "check": "无需检定", "risk": choice.get("risk", "低"), "forecast": "结果明确",
+            }
         request = self._check_request(event, choice, game, choice_index)
         preview = self.check_engine.preview(request)
         chance = preview["final_probability"]
@@ -204,6 +211,14 @@ class AIService:
     def evaluate_event_outcome(self, event: dict[str, Any], choice: dict[str, Any], game: dict[str, Any], choice_index: int) -> dict[str, Any]:
         """AI-facing structured outcome: reward scale, credible costs, and narrative facts."""
         assessment = self.assess_choice(event, choice, game, choice_index)
+        if choice.get("requiresCheck") is False:
+            primary = assessment["primary_trait"]
+            return {
+                **assessment, "code": "success", "label": "自然结果", "tier": "automatic", "roll": None,
+                "seed": None, "reward_multiplier": 1.0, "hp_loss": 0, "relationship_factor": 1.0,
+                "tradeoff_trait": self.opposing_traits[primary], "tradeoff_loss": 0, "fate_setback": 0,
+                "grants_items": True, "setback_text": "",
+            }
         checked = self.check_engine.execute(self._check_request(event, choice, game, choice_index))
         roll, code, label, multiplier = checked["roll"], checked["code"], checked["label"], checked["reward_multiplier"]
 

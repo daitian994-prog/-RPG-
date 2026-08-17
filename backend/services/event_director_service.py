@@ -190,15 +190,15 @@ class EventDirectorService:
         if selection["category"] == "world_thread":
             known = selection.get("threadAwareness", 0) >= 20
             subject = selection.get("threadTitle") if known else "一股尚未辨明的变化"
-            effects = "；可见影响包括" + "、".join(selection.get("worldEffects", [])) if selection.get("worldEffects") else ""
-            hooks = "；这次现场可以触及但不能自动完成的问题是" + "、".join(selection.get("followUpHooks", [])) if selection.get("followUpHooks") else ""
-            return f"{subject}正在影响{location_name}。世界事实处于“{selection.get('threadStageLabel')}”，这次只以{intent_label}的形式局部显现{effects}{hooks}，不会由事件本身推进线程阶段。"
+            effects = "附近已经能看见" + "、".join(selection.get("worldEffects", [])) + "。" if selection.get("worldEffects") else ""
+            concerns = "人们仍在担心" + "、".join(selection.get("followUpHooks", [])) + "。" if selection.get("followUpHooks") else ""
+            return f"关于{subject}的迹象已经来到{location_name}，眼前的人只知道自己亲眼见到的这一小部分。{effects}{concerns}"
         if selection["category"] == "hero":
-            return f"一名不轻易表明身份的旅人进入{location_name}的局部事件；他与{selection.get('heroName', '某位英雄')}有关，但本次只是稀有交叉，不替玩家解决问题。"
+            return f"一名不轻易表明身份的旅人来到{location_name}，他显然另有去处，也无意替任何人收拾眼前的麻烦。"
         if selection["category"] == "personal":
             condition = state.get("player", {}).get("bodyCondition", {}).get("label", "良好")
-            return f"这件事主要回应玩家近期经历与身体状态（{condition}），世界仍在背景中继续运转。"
-        return f"{location_name}的日常与环境自行发生变化，让世界保持呼吸；本次强度为{selection['intensity']}。"
+            return f"你近期的经历与{condition}的身体状态，让眼前这件事显得格外切身。"
+        return f"{location_name}的日常并未因为你的到来停下，眼前的变化已经引起了附近人的注意。"
 
     def record_selection(self, state: dict[str, Any], selection: dict[str, Any]) -> None:
         director = state["directorState"]
