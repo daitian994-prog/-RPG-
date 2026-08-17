@@ -59,6 +59,12 @@ $env:GIT_CONFIG_COUNT = "1"
 $env:GIT_CONFIG_KEY_0 = "safe.directory"
 $env:GIT_CONFIG_VALUE_0 = $projectRoot.Replace("\", "/")
 
+# Vercel Hobby projects backed by private repositories require the commit
+# author to match the GitHub account that owns the Vercel project.
+& $git config user.name "daitian994-prog"
+& $git config user.email "291481021+daitian994-prog@users.noreply.github.com"
+if ($LASTEXITCODE -ne 0) { throw "无法设置 GitHub 提交身份。" }
+
 $branch = (& $git branch --show-current).Trim()
 if ($branch -ne "main") { throw "当前分支是 $branch。为避免发布到错误环境，请先切换到 main 分支。" }
 
