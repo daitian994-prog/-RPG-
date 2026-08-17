@@ -139,11 +139,10 @@ class WorldThreadService:
             thread["stage"] = max(1, thread["stage"] - 1)
             thread["progress"] = thread["stage"]
             thread["selectedOutcome"] = copy.deepcopy(thread["interventionOutcome"])
-            label = "你的介入改变了这条世界线程的默认走向。"
+            label = "你的介入改变了事情原本的发展方向。"
         else:
             raise ValueError("未知的干预方式")
         thread["playerInterventions"].append({"worldTime": state["time"]["total_actions"], "strategy": strategy})
         thread["lastProgressAt"] = state["time"]["total_actions"]
         thread["interventionWindow"] = self._window(thread["stage"], thread["maxStage"], False)
         return {"threadId": thread_id, "strategy": strategy, "message": label}
-

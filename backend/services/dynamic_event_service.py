@@ -146,8 +146,8 @@ class DynamicEventService:
         title_pattern = self._pick(profile["titles"], seed, f"title:{slot}")
         title = title_pattern.format(object=obj, setting=setting, actor=actor)
         stage_fact = thread["stages"][thread["stage"]] if thread else None
-        thread_line = f"这并非孤立事故，近期关于{thread['title']}的迹象也指向这里。" if thread else "这件事来自此地自行运转的日常，而非等待你领取的任务。"
-        hero_line = f"{actor}没有表明完整身份，也没有替你处理问题；他只是因自己的目标短暂经过现场。" if hero else ""
+        thread_line = f"这并非孤立事故，近期关于{thread['title']}的迹象也指向这里。" if thread else "附近人的争论与不断逼近的异样表明，这件事已经无法再被当作寻常插曲。"
+        hero_line = f"{actor}没有表明完整身份，只在现场短暂停步，很快还会继续自己的路。" if hero else ""
         text = f"{setting}，{actor}正在查看{obj}。{pressure}。{thread_line}{hero_line}"
         intensity = "climax" if thread and not thread.get("resolved") and thread["stage"] >= thread["maxStage"] - 1 else profile["intensity"]
         difficulty = 6 if intensity == "low" else 8 if intensity == "medium" else 10 if intensity == "high" else 11

@@ -86,6 +86,16 @@ class EventDirectorServiceTest(unittest.TestCase):
         self.assertIn("山道戒严", context)
         self.assertIn("营救被俘村民", context)
 
+    def test_player_narrative_context_never_explains_backend_design(self):
+        forbidden = ("自行运转", "领取的任务", "玩家", "局部事件", "线程阶段", "本次强度", "默认走向")
+        for location in ("pallas", "windbreak", "war_ruins", "mountain_temple"):
+            candidates = self.director.candidates(self.state, location, self.pool(location))
+            for candidate in candidates:
+                context = self.director.context(self.state, candidate, location)
+                self.assertFalse(any(term in context for term in forbidden), context)
+            for event in self.pool(location):
+                self.assertFalse(any(term in event["text"] for term in forbidden), event["text"])
+
 
 if __name__ == "__main__":
     unittest.main()

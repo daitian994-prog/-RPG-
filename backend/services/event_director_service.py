@@ -194,11 +194,11 @@ class EventDirectorService:
             concerns = "人们仍在担心" + "、".join(selection.get("followUpHooks", [])) + "。" if selection.get("followUpHooks") else ""
             return f"关于{subject}的迹象已经来到{location_name}，眼前的人只知道自己亲眼见到的这一小部分。{effects}{concerns}"
         if selection["category"] == "hero":
-            return f"一名不轻易表明身份的旅人来到{location_name}，他显然另有去处，也无意替任何人收拾眼前的麻烦。"
+            return f"一名不轻易表明身份的旅人来到{location_name}。他显然另有去处，只为眼前的异样短暂停步。"
         if selection["category"] == "personal":
             condition = state.get("player", {}).get("bodyCondition", {}).get("label", "良好")
             return f"你近期的经历与{condition}的身体状态，让眼前这件事显得格外切身。"
-        return f"{location_name}的日常并未因为你的到来停下，眼前的变化已经引起了附近人的注意。"
+        return f"{location_name}附近的人纷纷停下手中的事，目光都落在眼前正在发生的变化上。"
 
     def record_selection(self, state: dict[str, Any], selection: dict[str, Any]) -> None:
         director = state["directorState"]
