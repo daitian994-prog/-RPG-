@@ -72,7 +72,7 @@ class GameLoopTest(unittest.TestCase):
         self.assertTrue(game["player"]["inventory"][0]["description"])
         self.assertNotIn("bonuses", game["player"]["inventory"][0])
         self.assertIn("effects", game["player"]["inventory"][0])
-        self.assertEqual(game["gameVersion"], "0.3.7")
+        self.assertEqual(game["gameVersion"], "0.3.8")
 
     def test_world_thread_intervention_costs_time_and_persists(self):
         game = self.service.new_game(["peace", "power", "freedom", "spirit", "destiny", "peace"])

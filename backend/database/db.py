@@ -1,9 +1,24 @@
 import json
+import os
 import sqlite3
 from pathlib import Path
 from typing import Any
 
-DB_PATH = Path(__file__).resolve().parent / "game.db"
+IS_VERCEL = bool(os.getenv("VERCEL"))
+LOCAL_DB_PATH = Path(__file__).resolve().parent / "game.db"
+DB_PATH = Path(os.getenv("RUNETERRA_DB_PATH", "/tmp/runeterra-game.db" if IS_VERCEL else str(LOCAL_DB_PATH)))
+GAME_CACHE_TTL_SECONDS = 60 * 60 * 24 * 30
+_runtime_cache = None
+
+
+def _game_cache():
+    """Use Vercel's request-aware persistent cache without importing it locally."""
+    global _runtime_cache
+    if _runtime_cache is None:
+        from vercel.functions import RuntimeCache
+
+        _runtime_cache = RuntimeCache(namespace="runeterra-games", strict=True)
+    return _runtime_cache
 
 
 def init_db() -> None:
@@ -68,6 +83,13 @@ def init_db() -> None:
 
 
 def save_game(game_id: str, state: dict[str, Any]) -> None:
+    if IS_VERCEL:
+        _game_cache().set(
+            game_id,
+            state,
+            {"ttl": GAME_CACHE_TTL_SECONDS, "tags": ["runeterra-games"]},
+        )
+        return
     payload = json.dumps(state, ensure_ascii=False)
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute(
@@ -80,6 +102,9 @@ def save_game(game_id: str, state: dict[str, Any]) -> None:
 
 
 def load_game(game_id: str) -> dict[str, Any] | None:
+    if IS_VERCEL:
+        state = _game_cache().get(game_id)
+        return state if isinstance(state, dict) else None
     with sqlite3.connect(DB_PATH) as conn:
         row = conn.execute("SELECT state_json FROM games WHERE id = ?", (game_id,)).fetchone()
     return json.loads(row[0]) if row else None

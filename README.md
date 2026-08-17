@@ -1,6 +1,6 @@
 # 《无名者：符文之地》
 
-当前版本：**v0.3.7**。版本创建、离线备份与安全恢复方法见 [版本说明.md](版本说明.md)。
+当前版本：**v0.3.8**。版本创建、离线备份与安全恢复方法见 [版本说明.md](版本说明.md)。
 
 阶段4已把 World Engine、Event Director、事件选择、统一检定、Outcome 写回和 AI Narrator 接成完整闭环。AI 只接收结构化 `EventContext` 并输出经过契约校验的叙事；所有概率、随机数、结果档位、奖励、关系和世界线程变化仍由程序决定。人物页的“完整闭环 Debug”可查看最近一次 Selector、Check、Outcome、AI 校验及 `StateChangeLog`。
 
@@ -28,7 +28,7 @@
 - 稳定 Seed 由事件、选项和玩家状态版本共同生成，刷新无法重骰
 - 价值观选择存在真实取舍：强化一种人格/命运方向时，可能削弱相对方向
 - 24 件带世界观描述、稀有度与实际属性加成的物品
-- SQLite 游戏存档；人物经历、物品、关系、访问地点和事件均会持续保存
+- 本地使用 SQLite 游戏存档；Vercel 使用 Runtime Cache 保存试玩进度
 - 独立 `AIService` 接口层，当前无 Key 时使用本地 Mock，可替换为任意模型 API
 
 ## 项目结构
@@ -90,6 +90,30 @@ python -m unittest backend.tests.test_game -v
 # frontend 目录
 npm run build
 ```
+
+## 部署到 Vercel
+
+仓库根目录已经包含 `vercel.json` 和 `api/index.py`。在 Vercel 导入 GitHub 仓库后使用以下设置：
+
+```text
+Framework Preset: Vite
+Root Directory: runeterra-ai-rpg（若仓库根目录就是本目录则留空）
+Install Command: pnpm --dir frontend install --frozen-lockfile
+Build Command: pnpm --dir frontend run build
+Output Directory: frontend/dist
+```
+
+AI 叙事为可选能力。未配置密钥时会自动使用本地 Mock，不影响完整试玩。需要真实 AI 时，在 Vercel Project Settings → Environment Variables 配置：
+
+```env
+DEEPSEEK_API_KEY=
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_MODEL=deepseek-v4-flash
+DEEPSEEK_TIMEOUT=15
+RUNETERRA_DISABLE_REMOTE_AI=0
+```
+
+不要把真实 `.env`、SQLite 文件、`.vercel`、依赖目录或构建产物提交到 GitHub。生产环境的管理后台被关闭，密钥只由 FastAPI 服务端读取。
 
 ## 替换真实 AI
 

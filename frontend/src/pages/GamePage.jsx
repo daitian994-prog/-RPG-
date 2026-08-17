@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { ChevronRight, CircleUserRound, Compass, Leaf, LockKeyhole, MapPin, Minus, Plus, Scroll, Shield, Sparkles, Sword, X } from 'lucide-react'
 import BottomNav from '../components/BottomNav'
 import PlayerHeader from '../components/PlayerHeader'
+import terrainMapUrl from '../../../backend/admin/assets/official/ionia/runeterra-terrain.jpg'
 
 const coreAttributeNames = {martial:'武艺',physique:'体魄',perception:'灵觉',willpower:'心志',agility:'机敏',social:'交涉'}
 const personalityNames = {peace:'和平倾向',power:'力量观',freedom:'自由倾向',spirit:'灵性亲和',destiny:'命运态度'}
@@ -89,11 +90,11 @@ function WorldMap({ locations, mapPlaces, current, points, time, chapterComplete
       <div className="map-window-label"><b>{mapLevel === 'ionia' ? '艾欧尼亚大陆' : '帕拉斯地区'}</b><span>{mapLevel === 'ionia' ? '灰色地点暂未开放' : '四个章节探索地点'}</span></div>
       <div className="map-zoom-controls" aria-label="地图窗口缩放"><button disabled={mapLevel === 'ionia'} onClick={() => setMapLevel('ionia')} aria-label="缩小至艾欧尼亚全境"><Minus size={13}/>全境</button><button disabled={mapLevel === 'pallas'} onClick={openPallas} aria-label="放大至帕拉斯地区"><Plus size={13}/>帕拉斯</button></div>
       {mapLevel === 'ionia' ? <svg className="official-game-map overview-map" viewBox="1180 480 760 700" preserveAspectRatio="xMidYMid meet" role="img" aria-label="艾欧尼亚大陆与数据库地点">
-        <image href="/admin/assets/official/ionia/runeterra-terrain.jpg" x="0" y="0" width="2048" height="2048"/>
+        <image href={terrainMapUrl} x="0" y="0" width="2048" height="2048"/>
         <text className="ionia-continent-label" x="1535" y="645">艾欧尼亚大陆</text>
         {overviewPlaces.map(place => { const p=place.map_position; const isPallas=place.id==='pallas'; const estimated=p.mode==='estimated_area'; return <g key={place.id} className={`world-map-pin ${isPallas?'pallas-open':'locked'} ${estimated?'estimated':''}`} transform={`translate(${p.x} ${p.y})`} role={isPallas?'button':'img'} tabIndex={isPallas?0:undefined} aria-label={isPallas?'帕拉斯，点击放大':'暂未开放，'+place.name} onClick={isPallas?openPallas:undefined} onKeyDown={isPallas ? event => { if(event.key==='Enter'||event.key===' '){event.preventDefault();openPallas()} } : undefined}>{estimated && <circle className="estimate-range" r={p.radius || 45}/>}<circle className="anchor" r={isPallas?10:7}/><text y="24">{place.name}</text>{isPallas && <text className="pin-status" y="41">点击进入</text>}</g> })}
       </svg> : <svg className="official-game-map pallas-detail-map" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice" role="img" aria-label="帕拉斯的四个章节地点">
-        <image href="/admin/assets/official/ionia/runeterra-terrain.jpg" x="0" y="0" width="100" height="100" preserveAspectRatio="xMidYMid slice"/>
+        <image href={terrainMapUrl} x="0" y="0" width="100" height="100" preserveAspectRatio="xMidYMid slice"/>
         <path className="local-route" d="M50 50 L29 27 M50 50 L25 72 M50 50 L76 27"/>
         {locations.map(loc => { const [x,y]=pallasLocalPositions[loc.id]; const active=loc.id===current; const isPallas=loc.id==='pallas'; return <g key={loc.id} className={`local-map-pin ${active?'current':''} ${isPallas?'hub':''}`} transform={`translate(${x} ${y})`} role="button" tabIndex="0" aria-label={`${loc.name}${active?'，当前位置':'，前往需要一次行动'}`} onClick={() => !busy && !active && onTravel(loc.id)} onKeyDown={event => handleLocalKey(event,loc.id)}><circle r={isPallas?4:3}/><text y="8">{loc.name}</text><text className="pin-status" y="13">{active?'当前位置':isPallas?'返回 · 1':'前往 · 1'}</text></g> })}
       </svg>}

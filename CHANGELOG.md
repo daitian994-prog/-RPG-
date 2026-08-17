@@ -1,5 +1,13 @@
 # 更新记录
 
+## 0.3.8 — 2026-08-17
+
+- 新增 Vercel Python Function 入口、Vite 构建与 SPA/API rewrite 配置，项目根目录可直接导入 Vercel。
+- 本地存档继续使用 SQLite；Vercel 生产环境改用官方 Runtime Cache 保存每位试玩者的 JSON 状态，避免向只读函数文件系统写入持久存档。
+- 生产环境不再暴露本地 API 节点管理与知识库编辑后台，DeepSeek 密钥只从服务端环境变量读取。
+- 将游戏地图素材交由 Vite 打包，移除公开试玩对 `/admin` 静态目录的依赖，并补充移动端安全区、缩放与触控尺寸兼容。
+- 完善 `.env.example`、`.gitignore`、`.vercelignore`、Python 版本与根依赖配置，并新增 Vercel 存储适配测试。
+
 ## 0.3.7 — 2026-08-17
 
 - 删除常规流程对 `e01`—`e20` 固定事件及固定 `eventProfiles`、`threadBindings` 映射的全部依赖，原 `events.json` 不再存在。

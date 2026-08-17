@@ -1,0 +1,14 @@
+.git/
+.venv/
+.vercel/
+outputs/
+backend/tests/
+backend/scripts/
+scripts/
+frontend/node_modules/
+frontend/dist/
+backend/database/*.db*
+*.bundle
+*.docx
+*.xlsx
+*.inspect.ndjson
