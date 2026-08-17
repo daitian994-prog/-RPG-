@@ -24,8 +24,6 @@ class EventDirectorService:
 
     def __init__(self) -> None:
         self.config = json.loads((DATA_DIR / "event_director.json").read_text(encoding="utf-8"))
-        self.profiles = self.config["eventProfiles"]
-        self.bindings = self.config["threadBindings"]
 
     def initial_state(self) -> dict[str, Any]:
         return {
@@ -71,46 +69,35 @@ class EventDirectorService:
         intents = profile.get("intents", ["environmental"])
         return intents[int(seed[:8], 16) % len(intents)]
 
-    def _base_candidates(self, events: list[dict[str, Any]], location: str, seed: str) -> list[dict[str, Any]]:
+    def _base_candidates(self, state: dict[str, Any], events: list[dict[str, Any]], location: str, seed: str) -> list[dict[str, Any]]:
         result = []
         for event in events:
             if event.get("chapter_only") or location not in event.get("locations", []):
                 continue
-            profile = self.profiles.get(event["id"], {"category": "environment", "intents": ["environmental"], "intensity": "low", "baseWeight": 1.0})
-            result.append({
-                "candidateId": f"base:{event['id']}", "templateId": event["id"],
-                "category": profile["category"], "threadId": None,
+            profile = event.get("directorProfile", {"category": "environment", "intents": ["environmental"], "intensity": "low", "baseWeight": 1.0})
+            candidate = {
+                "candidateId": f"dynamic:{event['id']}", "templateId": event["id"],
+                "compositionKey": event.get("compositionKey", event["id"]),
+                "category": profile["category"], "threadId": profile.get("threadId"),
                 "intent": self._intent(profile, hashlib.sha256(f"{seed}:{event['id']}".encode()).hexdigest()),
                 "intensity": profile["intensity"], "baseWeight": float(profile["baseWeight"]),
                 "heroId": profile.get("heroId"), "heroName": profile.get("heroName"),
-                "locationRelevance": "high",
-            })
-        return result
-
-    def _thread_candidates(self, state: dict[str, Any], location: str) -> list[dict[str, Any]]:
-        result = []
-        for thread in state.get("worldState", {}).get("activeThreads", []):
-            binding = self.bindings.get(thread["id"])
-            if not binding:
-                continue
-            templates = binding.get("templates", {}).get(location, [])
-            relevance = binding.get("locationRelevance", {}).get(location, "none")
-            if not templates or relevance == "none":
-                continue
-            stage = max(0, min(int(thread.get("stage", 0)), len(binding["stageIntents"]) - 1))
-            intent = "aftermath" if thread.get("resolved") else binding["stageIntents"][stage]
-            intensity = "climax" if not thread.get("resolved") and stage >= thread.get("maxStage", 6) - 1 else "high" if stage >= 4 else "medium" if stage >= 2 else "low"
-            for template_id in templates:
-                result.append({
-                    "candidateId": f"thread:{thread['id']}:{template_id}:{intent}", "templateId": template_id,
-                    "category": "world_thread", "threadId": thread["id"], "threadTitle": thread["title"],
-                    "threadStage": stage, "threadStageLabel": thread["stages"][stage],
+                "locationRelevance": profile.get("locationRelevance", "high"),
+                "dynamicComponents": event.get("components", {}),
+            }
+            if candidate["threadId"]:
+                thread = next((item for item in state.get("worldState", {}).get("activeThreads", []) if item["id"] == candidate["threadId"]), None)
+                if not thread:
+                    continue
+                stage = thread["stage"]
+                candidate.update({
+                    "threadTitle": thread["title"], "threadStage": stage, "threadStageLabel": thread["stages"][stage],
                     "threadUrgency": int(thread.get("urgency", 0)), "threadAwareness": int(thread.get("awareness", 0)),
-                    "threadResolved": bool(thread.get("resolved")), "intent": intent, "intensity": intensity,
+                    "threadResolved": bool(thread.get("resolved")),
                     "worldEffects": list(thread.get("worldEffects", [])) if stage >= 4 or thread.get("resolved") else [],
                     "followUpHooks": list(thread.get("resolvedOutcome", {}).get("followUpHooks", [])) if thread.get("resolved") else [],
-                    "baseWeight": 0.72, "locationRelevance": relevance,
                 })
+            result.append(candidate)
         return result
 
     @staticmethod
@@ -120,7 +107,7 @@ class EventDirectorService:
 
     @staticmethod
     def _recent_modifier(candidate: dict[str, Any], recent: list[dict[str, Any]]) -> float:
-        same_template = sum(item.get("templateId") == candidate["templateId"] for item in recent[-5:])
+        same_template = sum(item.get("compositionKey", item.get("templateId")) == candidate.get("compositionKey", candidate["templateId"]) for item in recent[-5:])
         same_category = sum(item.get("category") == candidate["category"] for item in recent[-4:])
         same_thread = candidate.get("threadId") and sum(item.get("threadId") == candidate.get("threadId") for item in recent[-4:])
         return 1 / (1 + same_template * 0.72 + same_category * 0.16 + int(same_thread or 0) * 0.22)
@@ -169,7 +156,7 @@ class EventDirectorService:
     def candidates(self, state: dict[str, Any], location: str, events: list[dict[str, Any]]) -> list[dict[str, Any]]:
         self.normalize(state)
         seed = self._stable_seed(state, location)
-        raw = self._base_candidates(events, location, seed) + self._thread_candidates(state, location)
+        raw = self._base_candidates(state, events, location, seed)
         return [self._score(candidate, state, seed) for candidate in raw]
 
     def select(self, state: dict[str, Any], location: str, events: list[dict[str, Any]]) -> dict[str, Any]:

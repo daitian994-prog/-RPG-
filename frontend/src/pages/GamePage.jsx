@@ -156,7 +156,8 @@ function EventSheet({ event, busy, eventState, onChoice, onClose }) {
   return <div className="sheet-backdrop"><section className={`event-sheet ${event.type === '战斗' ? 'battle' : ''}`}>
     <div className="sheet-handle"/><button className="sheet-close" onClick={onClose}><X size={18}/></button>
     <span className="event-type"><Icon size={15}/>{event.type}事件</span><h2>{event.title}</h2>
-    {event.director && <div className="director-badge"><span>{event.director.categoryLabel}</span><b>{event.director.intentLabel} · {intensityLabel[event.director.intensity] || event.director.intensity}</b></div>}
+    {event.director && <div className="director-badge"><span>{event.dynamic ? `动态生成 · ${event.director.categoryLabel}` : event.director.categoryLabel}</span><b>{event.director.intentLabel} · {intensityLabel[event.director.intensity] || event.director.intensity}</b></div>}
+    {event.dynamic && event.components && <div className="dynamic-components"><span>本次现场即时组合</span><p>{[event.components.setting,event.components.actor,event.components.object,event.components.pressure].filter(Boolean).join(' · ')}</p></div>}
     {event.boss && <div className="boss-card"><span>{event.boss.title}</span><h3>{event.boss.name}</h3><p>{event.boss.description}</p><div><b>威胁 · 致命</b><b>关键检定 · 4 个节点</b></div></div>}
     <div className={`event-copy ${event.streaming ? 'is-streaming' : ''}`} aria-live="polite">{(event.paragraphs?.length ? event.paragraphs : event.text ? event.text.split('\n\n') : []).map((p,i) => <p className="stream-paragraph" key={`${i}-${p.slice(0,12)}`}>{p}</p>)}{!event.text && <div className="world-whisper"><i/><span>{event.type === '战斗' ? '敌人正在逼近。你调整呼吸，四周逐渐安静下来。' : '风从近处掠过。某种变化正在显露轮廓。'}</span></div>}</div>
     {event.type === '战斗' && <div className="battle-warning"><Sword size={17}/><span>战斗将作为 {event.chapter_finale ? '4 个' : '2 个'}关键检定节点处理；本次选择决定当前节点局势。</span></div>}

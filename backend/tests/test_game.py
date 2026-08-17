@@ -9,6 +9,27 @@ class GameLoopTest(unittest.TestCase):
     def setUp(self):
         self.service = GameService()
 
+    def _dynamic_event(self, game, *, event_type=None, attribute=None, location="windbreak"):
+        game["directorState"]["tension"] = 80
+        pool = self.service.dynamic_events.generate_pool(game, location)
+        for event in pool:
+            if event_type and event["type"] != event_type:
+                continue
+            if attribute and not any(choice["attribute"] == attribute for choice in event["choices"]):
+                continue
+            return event
+        self.fail("未生成符合测试条件的动态事件")
+
+    def _install_pending(self, game, event):
+        from backend.database.db import save_game
+        event_id = f"{event['id']}@test"
+        profile = event["directorProfile"]
+        director = {"category": profile["category"], "intent": profile["intents"][0], "intensity": profile["intensity"], "threadId": profile.get("threadId"), "heroId": profile.get("heroId"), "eventId": event_id}
+        template = {**event, "id": event_id, "template_id": event["id"], "event_seed": "dynamic-test", "director": director, "directorPrelude": "动态测试现场", "eventContext": None}
+        game["pendingEvent"] = {"id": event_id, "templateId": event["id"], "eventSeed": "dynamic-test", "director": director, "directorPrelude": "动态测试现场", "eventContext": None, "template": template}
+        save_game(game["id"], game)
+        return event_id
+
     def test_complete_action_loop(self):
         game = self.service.new_game(["peace", "power", "freedom", "spirit", "destiny", "peace+spirit"])
         self.assertEqual(game["action_points"], 3)
@@ -51,7 +72,7 @@ class GameLoopTest(unittest.TestCase):
         self.assertTrue(game["player"]["inventory"][0]["description"])
         self.assertNotIn("bonuses", game["player"]["inventory"][0])
         self.assertIn("effects", game["player"]["inventory"][0])
-        self.assertEqual(game["gameVersion"], "0.3.6")
+        self.assertEqual(game["gameVersion"], "0.3.7")
 
     def test_world_thread_intervention_costs_time_and_persists(self):
         game = self.service.new_game(["peace", "power", "freedom", "spirit", "destiny", "peace"])
@@ -80,7 +101,8 @@ class GameLoopTest(unittest.TestCase):
     def test_personality_change_does_not_change_core_ability(self):
         game = self.service.new_game(["peace", "power", "freedom", "spirit", "destiny", "peace"])
         before = dict(game["player"]["coreAbilities"])
-        game, _ = self.service.resolve(game["id"], "e01", 0)
+        game, event = self.service.travel(game["id"], "war_ruins", narrate=False)
+        game, _ = self.service.resolve(game["id"], event["id"], 0)
         self.assertEqual(before, game["player"]["coreAbilities"])
 
     def test_legacy_save_is_migrated_without_losing_hp(self):
@@ -96,11 +118,12 @@ class GameLoopTest(unittest.TestCase):
 
     def test_body_injury_modifier_affects_checks(self):
         game = self.service.new_game(["peace", "power", "freedom", "spirit", "destiny", "power"])
-        event = next(item for item in self.service.events if item["id"] == "e10")
-        healthy = self.service.ai.assess_choice(event, event["choices"][0], game, 0)["final_probability"]
+        event = self._dynamic_event(game, attribute="martial")
+        index = next(i for i, choice in enumerate(event["choices"]) if choice["attribute"] == "martial")
+        healthy = self.service.ai.assess_choice(event, event["choices"][index], game, index)["final_probability"]
         game["player"]["injurySeverity"] = 2
         self.service._sync_character_layers(game)
-        injured = self.service.ai.assess_choice(event, event["choices"][0], game, 0)["final_probability"]
+        injured = self.service.ai.assess_choice(event, event["choices"][index], game, index)["final_probability"]
         self.assertLess(injured, healthy)
 
     def test_reliable_rest_recovers_injury_and_status_for_time_cost(self):
@@ -126,20 +149,22 @@ class GameLoopTest(unittest.TestCase):
     def test_status_has_source_duration_and_real_modifier(self):
         game = self.service.new_game(["peace", "power", "freedom", "spirit", "destiny", "freedom"])
         game["player"]["statuses"] = [{"id": "tense", "name": "紧张", "source": "伏击", "duration": 2, "modifiers": {"agility": -10}}]
-        event = next(item for item in self.service.events if item["id"] == "e10")
-        assessment = self.service.ai.assess_choice(event, event["choices"][1], game, 1)
+        event = self._dynamic_event(game, attribute="agility")
+        index = next(i for i, choice in enumerate(event["choices"]) if choice["attribute"] == "agility")
+        assessment = self.service.ai.assess_choice(event, event["choices"][index], game, index)
         self.assertTrue(any(item["source"] == "status" and item["value"] == -10 for item in assessment["applied_modifiers"]))
 
     def test_ordinary_failure_never_sets_dead(self):
         game = self.service.new_game(["peace", "power", "freedom", "spirit", "destiny", "peace"])
-        game, _ = self.service.resolve(game["id"], "e01", 0)
+        game, event = self.service.travel(game["id"], "war_ruins", narrate=False)
+        game, _ = self.service.resolve(game["id"], event["id"], 0)
         self.assertFalse(game.get("dead", False))
         self.assertGreater(game["player"]["legacyCombatStats"]["hp"], 0)
 
     def test_only_explicitly_lethal_failure_can_set_dead(self):
         game = self.service.new_game(["peace", "power", "freedom", "spirit", "destiny", "power"])
         lethal = {"id": "test_lethal", "event_seed": "test-lethal", "type": "战斗", "locations": ["pallas"], "title": "致命测试", "text": "测试", "choices": [{"id": "duel", "text": "独自挑战强敌", "hint": "你清楚这可能致命", "attribute": "martial", "difficulty": 99, "lethal": True, "result": {"text": "后果", "personality": {"power": 1}}}]}
-        self.service.events.append(lethal)
+        self.service.chapter_events.append(lethal)
         for version in range(500):
             game["player_state_version"] = version
             if self.service.ai.evaluate_event_outcome(lethal, lethal["choices"][0], game, 0)["code"] == "failure":
@@ -153,19 +178,21 @@ class GameLoopTest(unittest.TestCase):
 
     def test_battle_failure_can_create_captured_state_instead_of_death(self):
         game = self.service.new_game(["peace", "power", "freedom", "spirit", "destiny", "power"])
-        event = next(item for item in self.service.events if item["id"] == "e10")
+        event = self._dynamic_event(game, event_type="战斗")
+        event_id = self._install_pending(game, event)
+        installed = self.service._event_template(game, event_id)
         for index in range(500):
             game["player_state_version"] = index
-            if self.service.ai.evaluate_event_outcome(event, event["choices"][0], game, 0)["code"] == "failure":
+            if self.service.ai.evaluate_event_outcome(installed, installed["choices"][0], game, 0)["code"] == "failure":
                 break
         from backend.database.db import save_game
         save_game(game["id"], game)
-        game, resolution = self.service.resolve(game["id"], "e10", 0)
+        game, resolution = self.service.resolve(game["id"], event_id, 0)
         self.assertEqual(resolution["outcome"]["code"], "failure")
         self.assertTrue(game["captured"]["active"])
         self.assertFalse(game.get("dead", False))
 
-    def test_map_and_old_events_remain_available(self):
+    def test_map_and_dynamic_events_remain_available(self):
         game = self.service.new_game(["peace", "power", "freedom", "spirit", "destiny", "peace"])
         game, event = self.service.travel(game["id"], "windbreak", narrate=False)
         self.assertEqual(game["location"], "windbreak")
@@ -179,30 +206,32 @@ class GameLoopTest(unittest.TestCase):
 
     def test_rich_resolution_explains_every_effect(self):
         game = self.service.new_game(["peace", "power", "freedom", "spirit", "destiny", "peace"])
+        game, event = self.service.travel(game["id"], "war_ruins", narrate=False)
         with patch("backend.services.ai_service.random.randint", return_value=1):
-            game, resolution = self.service.resolve(game["id"], "e01", 0)
+            game, resolution = self.service.resolve(game["id"], event["id"], 0)
         self.assertGreater(len(resolution["narrative"]), 100)
-        self.assertEqual(resolution["changes"]["attributes"], {})
+        self.assertIsInstance(resolution["changes"]["attributes"], dict)
         self.assertTrue(resolution["changes"]["personality"])
         self.assertEqual(resolution["changes"]["fate"], {})
         self.assertEqual(game["player"]["fateAffinities"], game["player"]["fate_weights"])
-        self.assertEqual(resolution["items"][0]["name"], "苦叶膏")
-        self.assertTrue(resolution["items"][0]["description"])
-        self.assertNotIn("bonuses", resolution["items"][0])
-        self.assertTrue(resolution["items"][0]["effects"])
+        self.assertIn("worldFeedback", resolution)
+        self.assertTrue(event["dynamic"])
+        self.assertTrue(event["components"])
 
     def test_seeded_resolution_cannot_be_changed_by_refresh(self):
         game = self.service.new_game(["peace", "power", "freedom", "spirit", "destiny", "peace"])
-        game, first = self.service.resolve(game["id"], "e01", 0)
-        game, second = self.service.resolve(game["id"], "e01", 0)
+        game, event = self.service.travel(game["id"], "war_ruins", narrate=False)
+        game, first = self.service.resolve(game["id"], event["id"], 0)
+        game, second = self.service.resolve(game["id"], event["id"], 0)
         self.assertEqual(first["outcome"]["roll"], second["outcome"]["roll"])
         self.assertEqual(first["outcome"]["tier"], second["outcome"]["tier"])
         self.assertEqual(len(game["player"]["memories"]), 1)
 
     def test_completed_event_cannot_be_replayed_with_another_choice(self):
         game = self.service.new_game(["peace", "power", "freedom", "spirit", "destiny", "peace"])
-        game, first = self.service.resolve(game["id"], "e01", 0)
-        game, replay = self.service.resolve(game["id"], "e01", 2)
+        game, event = self.service.travel(game["id"], "war_ruins", narrate=False)
+        game, first = self.service.resolve(game["id"], event["id"], 0)
+        game, replay = self.service.resolve(game["id"], event["id"], 2)
         self.assertEqual(first["choice_index"], replay["choice_index"])
         self.assertEqual(len(game["player"]["memories"]), 1)
 
@@ -222,18 +251,27 @@ class GameLoopTest(unittest.TestCase):
         self.assertNotEqual(engine.seed_for(first), engine.seed_for(second))
 
     def test_all_event_choices_are_resolvable(self):
-        self.assertEqual(len(self.service.events), 21)
-        for event in self.service.events:
-            self.assertEqual(len(event["choices"]), 3)
-            self.assertTrue(all("result" in choice for choice in event["choices"]))
+        game = self.service.new_game(["peace"] * 6)
+        events = []
+        for index, location in enumerate(["pallas", "windbreak", "war_ruins", "mountain_temple"] * 6):
+            game["time"]["total_actions"] = index
+            game["worldState"]["worldTime"] = index
+            events.extend(self.service.dynamic_events.generate_pool(game, location))
+        self.assertGreater(len({event["id"] for event in events}), 200)
+        self.assertTrue(all(len(event["choices"]) == 3 for event in events))
+        self.assertTrue(all("result" in choice for event in events for choice in event["choices"]))
 
     def test_at_least_ten_events_use_distinct_core_attributes(self):
-        mapped = [event for event in self.service.events if len({choice.get("attribute") for choice in event["choices"] if choice.get("attribute")}) >= 2]
+        game = self.service.new_game(["peace"] * 6)
+        events = self.service.dynamic_events.generate_pool(game, "pallas")
+        mapped = [event for event in events if len({choice.get("attribute") for choice in event["choices"] if choice.get("attribute")}) >= 2]
         self.assertGreaterEqual(len(mapped), 10)
 
     def test_battle_uses_the_same_check_engine(self):
         game = self.service.new_game(["peace", "power", "freedom", "spirit", "destiny", "power"])
-        game, resolution = self.service.resolve(game["id"], "e10", 0)
+        event = self._dynamic_event(game, event_type="战斗")
+        event_id = self._install_pending(game, event)
+        game, resolution = self.service.resolve(game["id"], event_id, 0)
         self.assertIn(resolution["outcome"]["tier"], {"critical", "success", "partial", "failure"})
         self.assertEqual(resolution["battle"]["chance"], resolution["outcome"]["final_probability"])
 

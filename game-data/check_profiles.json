@@ -1,16 +1,3 @@
 {
-  "e01": [{"attribute":"social","difficulty":7,"modifiers":[{"label":"熟悉的药庐","value":10}]},{"attribute":"agility","difficulty":8},{"attribute":"perception","difficulty":8}],
-  "e02": [{"attribute":"martial","difficulty":8},{"attribute":"social","difficulty":7},{"attribute":"agility","difficulty":8}],
-  "e03": [{"attribute":"perception","difficulty":8},{"attribute":"willpower","difficulty":9},{"attribute":"agility","difficulty":7}],
-  "e04": [{"attribute":"physique","difficulty":8},{"attribute":"perception","difficulty":8},{"attribute":"social","difficulty":7}],
-  "e05": [{"attribute":"social","difficulty":7},{"attribute":"agility","difficulty":7},{"attribute":"willpower","difficulty":8}],
-  "e06": [{"attribute":"perception","difficulty":8},{"attribute":"agility","difficulty":9},{"attribute":"willpower","difficulty":8}],
-  "e07": [{"attribute":"willpower","difficulty":7},{"attribute":"social","difficulty":8},{"attribute":"agility","difficulty":8}],
-  "e08": [{"attribute":"willpower","difficulty":9},{"attribute":"perception","difficulty":9},{"attribute":"agility","difficulty":8}],
-  "e09": [{"attribute":"physique","difficulty":9},{"attribute":"perception","difficulty":8},{"attribute":"social","difficulty":7}],
-  "e10": [{"attribute":"martial","difficulty":10},{"attribute":"agility","difficulty":9,"modifiers":[{"label":"树根与浓雾","value":15}]},{"attribute":"perception","difficulty":10}],
-  "e11": [{"attribute":"physique","difficulty":9},{"attribute":"agility","difficulty":8},{"attribute":"social","difficulty":8}],
-  "e12": [{"attribute":"martial","difficulty":10},{"attribute":"agility","difficulty":9},{"attribute":"perception","difficulty":9}],
-  "e20": [{"attribute":"physique","difficulty":10},{"attribute":"agility","difficulty":10},{"attribute":"perception","difficulty":10}],
   "chapter1_boss": [{"attribute":"physique","difficulty":11},{"attribute":"agility","difficulty":11},{"attribute":"perception","difficulty":11}]
 }

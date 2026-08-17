@@ -41,6 +41,8 @@ class NarratorContract:
         narrative = value.get("narrative")
         if not isinstance(narrative, str) or not narrative.strip():
             errors.append("narrative必须是非空字符串")
+        elif re.search(r"收进(?:怀里|行囊)|收入行囊|带回(?:村|住处)|获得了|得到(?:了|一)|交给你|递给你|塞给你", narrative):
+            errors.append("叙事声称获得了程序未确认的物品或线索")
         for key in ("choicePresentation", "npcDialogue", "flavorTags"):
             if key in value and not isinstance(value[key], list):
                 errors.append(f"{key}必须是数组")
@@ -51,4 +53,3 @@ class NarratorContract:
             "flavorTags": value.get("flavorTags", []),
         }
         return {"valid": not errors, "errors": errors, "output": normalized if not errors else None}
-

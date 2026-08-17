@@ -8,6 +8,7 @@ from typing import Any
 
 from backend.database.db import init_db, load_game, save_game
 from backend.services.ai_service import AIService
+from backend.services.dynamic_event_service import DynamicEventService
 from backend.services.event_director_service import EventDirectorService
 from backend.services.event_context_service import EventContextService
 from backend.services.outcome_engine import OutcomeEngine
@@ -40,15 +41,16 @@ class GameService:
     def __init__(self) -> None:
         init_db()
         self.ai = AIService()
+        self.dynamic_events = DynamicEventService()
         self.world_threads = WorldThreadService()
         self.director = EventDirectorService()
         self.event_context = EventContextService()
         self.outcomes = OutcomeEngine()
         self.locations = self._read("locations.json")
         self.npcs = self._read("npc.json")
-        self.events = self._read("events.json")
+        self.chapter_events = self._read("chapter_events.json")
         check_profiles = self._read("check_profiles.json")
-        for event in self.events:
+        for event in self.chapter_events:
             for index, profile in enumerate(check_profiles.get(event["id"], [])):
                 event["choices"][index].update(profile)
         self.world = self._read("world.json")
@@ -212,6 +214,11 @@ class GameService:
         if state.get("gameVersion") != PROJECT_VERSION:
             state["gameVersion"] = PROJECT_VERSION
             changed = True
+        pending = state.get("pendingEvent", {})
+        if pending.get("templateId", "").startswith("e") and pending.get("templateId", "")[1:].isdigit():
+            state.pop("pendingEvent", None)
+            state.setdefault("log", []).append("旧版固定事件已经退出事件池；下一次旅行会根据当前世界状态生成新的现场。")
+            changed = True
         if self.world_threads.normalize(state):
             changed = True
         if self.director.normalize(state):
@@ -345,8 +352,9 @@ class GameService:
             save_game(game_id, state)
             return state, self._chapter_boss_event(state, narrate=narrate)
 
-        selection = self.director.select(state, location_id, self.events)
-        template = self._event_template(state, selection["eventId"], selection=selection)
+        generated_pool = self.dynamic_events.generate_pool(state, location_id)
+        selection = self.director.select(state, location_id, generated_pool)
+        template = self._event_template(state, selection["eventId"], selection=selection, catalog=generated_pool)
         selection["directorContext"] = self.director.context(state, selection, location["name"])
         template["director"] = selection
         template["directorPrelude"] = selection["directorContext"]
@@ -360,13 +368,17 @@ class GameService:
             "eventSeed": selection["seed"], "director": event["director"],
             "directorPrelude": selection["directorContext"],
             "eventContext": template["eventContext"],
+            "template": template,
         }
         self.director.record_selection(state, selection)
         self.outcomes.record(state, "travel_and_select_event", before, metadata={"locationId": location_id, "eventId": selection["eventId"], "candidateId": selection["candidateId"]})
         save_game(game_id, state)
         return state, event
 
-    def _event_template(self, state: dict[str, Any], event_id: str, *, selection: dict[str, Any] | None = None) -> dict[str, Any]:
+    def _event_template(
+        self, state: dict[str, Any], event_id: str, *, selection: dict[str, Any] | None = None,
+        catalog: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
         pending = state.get("pendingEvent", {})
         if selection:
             template_id = selection["templateId"]
@@ -386,13 +398,16 @@ class GameService:
             director = {}
             prelude = ""
             event_context = None
-        base = next((event for event in self.events if event["id"] == template_id), None)
+        if not selection and pending.get("id") == event_id and pending.get("template"):
+            base = pending["template"]
+        else:
+            base = next((event for event in (catalog or self.chapter_events) if event["id"] == template_id), None)
         if not base:
             raise ValueError("事件已经消散")
         return {**base, "id": event_id, "template_id": template_id, "event_seed": seed, "director": director, "directorPrelude": prelude, "eventContext": event_context}
 
     def _chapter_boss_event(self, state: dict[str, Any], *, narrate: bool = True) -> dict[str, Any]:
-        template = next(event for event in self.events if event["id"] == "chapter1_boss")
+        template = next(event for event in self.chapter_events if event["id"] == "chapter1_boss")
         location = next(location for location in self.locations if location["id"] == "pallas")
         event = self.ai.generate_event(template, state, location, narrate=narrate)
         event["boss"] = template["boss"]

@@ -31,7 +31,7 @@ class EventContextService:
             key: selection.get(key) for key in (
                 "candidateId", "templateId", "eventId", "category", "threadId", "intent",
                 "intensity", "heroId", "heroName", "threadStage", "threadStageLabel",
-                "worldEffects", "followUpHooks", "seed",
+                "worldEffects", "followUpHooks", "seed", "compositionKey", "dynamicComponents",
             ) if selection.get(key) is not None
         }
         hero = None
@@ -73,4 +73,3 @@ class EventContextService:
                 "不得创造未被selectedCandidate允许的英雄登场", "不得替玩家作出选择",
             ],
         }
-

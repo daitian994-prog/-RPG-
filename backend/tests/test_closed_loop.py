@@ -1,9 +1,8 @@
 import copy
-import json
 import unittest
-from pathlib import Path
 
 from backend.services.check_engine import CheckEngine, CheckRequest
+from backend.services.dynamic_event_service import DynamicEventService
 from backend.services.event_context_service import EventContextService
 from backend.services.event_director_service import EventDirectorService
 from backend.services.narrator_contract import NarratorContract
@@ -11,16 +10,13 @@ from backend.services.outcome_engine import OutcomeEngine
 from backend.services.world_thread_service import WorldThreadService
 
 
-DATA_DIR = Path(__file__).resolve().parents[2] / "game-data"
-
-
 class ClosedLoopTest(unittest.TestCase):
     def setUp(self):
         self.world = WorldThreadService()
         self.director = EventDirectorService()
+        self.generator = DynamicEventService()
         self.outcomes = OutcomeEngine()
-        self.events = json.loads((DATA_DIR / "events.json").read_text(encoding="utf-8"))
-        self.locations = json.loads((DATA_DIR / "locations.json").read_text(encoding="utf-8"))
+        self.locations = [{"id": "pallas", "name": "帕拉斯"}, {"id": "windbreak", "name": "断风森林"}, {"id": "war_ruins", "name": "战争遗迹"}, {"id": "mountain_temple", "name": "山间寺庙"}]
         self.state = {
             "id": "closed-loop", "season": "第一年 · 春", "location": "pallas",
             "time": {"total_actions": 2}, "action_points": 2,
@@ -34,9 +30,10 @@ class ClosedLoopTest(unittest.TestCase):
         }
 
     def test_event_context_has_complete_authoritative_protocol(self):
-        selection = self.director.select(self.state, "pallas", self.events)
+        events = self.generator.generate_pool(self.state, "pallas")
+        selection = self.director.select(self.state, "pallas", events)
         selection["directorContext"] = self.director.context(self.state, selection, "帕拉斯")
-        template = next(item for item in self.events if item["id"] == selection["templateId"])
+        template = next(item for item in events if item["id"] == selection["templateId"])
         context = EventContextService().build(self.state, self.locations[0], selection, template)
         required = {"location", "time", "playerSummary", "statuses", "traits", "clues", "activeThreadsSummary", "directorIntent", "selectedCandidate", "eventIntent", "hardFacts", "forbiddenChanges"}
         self.assertTrue(required.issubset(context))
@@ -47,8 +44,10 @@ class ClosedLoopTest(unittest.TestCase):
         contract = NarratorContract()
         valid = contract.validate('{"narrative":"你听见风穿过树林。","choicePresentation":[],"npcDialogue":[],"flavorTags":[]}')
         invalid = contract.validate('{"narrative":"你成功了。","probability":95,"stage":6}')
+        invented_reward = contract.validate('{"narrative":"你把陌生军牌收进怀里。","choicePresentation":[],"npcDialogue":[],"flavorTags":[]}')
         self.assertTrue(valid["valid"])
         self.assertFalse(invalid["valid"])
+        self.assertFalse(invented_reward["valid"])
         self.assertTrue(any("未授权" in item or "规则" in item for item in invalid["errors"]))
 
     def test_world_feedback_never_changes_thread_stage_and_failure_creates_play(self):
@@ -94,10 +93,11 @@ class ClosedLoopTest(unittest.TestCase):
             state["time"]["total_actions"] = index + 1
             state["worldState"]["worldTime"] = index + 1
             location = self.locations[index % 4]["id"]
-            selection = self.director.select(state, location, self.events)
+            events = self.generator.generate_pool(state, location)
+            selection = self.director.select(state, location, events)
             selections.append(selection)
             self.director.record_selection(state, selection)
-        self.assertGreaterEqual(len({item["templateId"] for item in selections}), 10)
+        self.assertEqual(len({item["templateId"] for item in selections}), 36)
         self.assertGreaterEqual(len({item["intent"] for item in selections}), 6)
         self.assertIn("world_thread", {item["category"] for item in selections})
 

@@ -323,7 +323,7 @@ class AIService:
                 "已有记忆": game["player"].get("memories", [])[-3:],
                 "可选行动": [choice["text"] for choice in event["choices"]],
                 "官方世界观检索": self.lore.context_for_event(location["id"], event["type"], opening),
-                "硬性边界": "程序已经决定Thread、Stage、Location、Intent与强度。只扩写这次局部现场，不修改选项，不替你行动，不推进世界阶段，不创造重大世界结果，不提前结算。",
+                "硬性边界": "程序已经决定Thread、Stage、Location、Intent与强度。只扩写这次局部现场，不修改选项，不替你行动，不推进世界阶段，不创造重大世界结果，不提前结算，不描述主角获得、收起或带走任何新物品与线索。",
             }
         if narrate:
             event["text"] = self._contract_narrate(
@@ -405,7 +405,7 @@ class AIService:
                 "官方世界观检索": self.lore.context_for_event(
                     location["id"], event["type"], f"{event['title']} {consequence} {battle_text}"
                 ),
-                "硬性边界": "必须保持结算方向和代价，不新增补偿，不改变任何数值或物品。",
+                "硬性边界": "必须保持结算方向和代价，不新增补偿，不改变任何数值或物品；除程序事实明确列出外，不描述主角获得、收起或带走任何新物品与线索。",
             }
         return self._contract_narrate(
             kind="resolution", facts=facts, game=game, fallback=text, event_type=event["type"],

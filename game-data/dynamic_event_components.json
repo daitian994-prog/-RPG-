@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "locations": {
+    "pallas": {
+      "settings": ["刚开门的药铺外", "通往古寺的青石路上", "村口临时搭起的货棚间", "被春雨冲出浅沟的田埂旁"],
+      "actors": ["一名不肯说明来历的商旅", "几名神色不安的村民", "背着药篓的年轻学徒", "负责夜巡的守卫"],
+      "objects": ["一封被雨水洇开的信", "沾有陌生红土的货箱", "持续发热的旧护符", "画错了山道的地图"],
+      "pressures": ["村民对它的来历争执不休", "北面道路即将关闭", "一个关键证人正准备离开", "异样正在引来更多围观者"]
+    },
+    "windbreak": {
+      "settings": ["两棵古树交叠的阴影里", "一条忽然失去鸟鸣的旧路上", "被蓝色菌光照亮的根系间", "林雾最浓的浅谷边"],
+      "actors": ["追踪痕迹的老猎人", "受惊后不肯继续前进的樵夫", "一只反复回望你的林灵", "藏在树后的陌生旅人"],
+      "objects": ["刻着新鲜刀痕的树皮", "被黑藤缠住的铜铃", "不属于任何野兽的脚印", "一簇逆着季节开放的花"],
+      "pressures": ["雾正迅速吞没来路", "附近灵息开始失去规律", "暗处的脚步正在靠近", "树林只给你很短的判断时间"]
+    },
+    "war_ruins": {
+      "settings": ["坍塌的军帐后", "断墙投下的狭长阴影中", "半埋于灰土的祭台旁", "旧要塞通风井的入口处"],
+      "actors": ["寻找旧物的拾荒者", "隐瞒伤势的退伍士兵", "独自翻找瓦砾的孩子", "戴着破损面甲的陌生人"],
+      "objects": ["仍有微光的爆裂符", "没有寄出的战地家书", "刻掉姓名的军牌", "被藤根顶开的武器箱"],
+      "pressures": ["残存机关已经开始运转", "另一队拾荒者正在接近", "石梁随时可能再次坍塌", "旧日杀意正在唤醒附近灵体"]
+    },
+    "mountain_temple": {
+      "settings": ["暮钟余音尚未散去的回廊里", "映不出人影的古井旁", "云雾越过石阶的山门外", "存放无名牌位的偏殿中"],
+      "actors": ["拒绝解释戒律的年轻僧人", "冒雨上山的疲惫旅人", "守着空牌位的老人", "只在钟声后出现的扫地人"],
+      "objects": ["自行翻页的旧经卷", "裂开一道细缝的石灯", "没有撞槌却微微震动的铜钟", "盛着陌生倒影的一碗井水"],
+      "pressures": ["下一声钟响前必须作出决定", "寺中众人对异象保持沉默", "山雨即将切断下山道路", "灵界的回应正在变得清晰"]
+    }
+  },
+  "intents": {
+    "environmental": {"titles": ["{object}的异动", "{setting}的征兆"], "intensity": "low", "type": "探索"},
+    "rumor": {"titles": ["关于{object}的传闻", "{actor}带来的消息"], "intensity": "low", "type": "日常"},
+    "clue": {"titles": ["{object}留下的线索", "无法忽略的痕迹"], "intensity": "medium", "type": "探索"},
+    "investigation": {"titles": ["追查{object}", "被掩盖的现场"], "intensity": "medium", "type": "探索"},
+    "encounter": {"titles": ["{setting}的遭遇", "来路被截断"], "intensity": "high", "type": "战斗"},
+    "conflict": {"titles": ["围绕{object}的冲突", "退路之前"], "intensity": "high", "type": "战斗"},
+    "aftermath": {"titles": ["{object}留下的余波", "事情结束以后"], "intensity": "medium", "type": "命运"},
+    "npc_report": {"titles": ["{actor}的请求", "迟来的报告"], "intensity": "low", "type": "NPC"},
+    "opportunity": {"titles": ["{object}带来的机会", "无人认领的发现"], "intensity": "low", "type": "成长"},
+    "personal": {"titles": ["旧记忆与{object}", "只向你显现的岔路"], "intensity": "medium", "type": "成长"},
+    "hero_overlap": {"titles": ["{actor}经过此地", "短暂交错的道路"], "intensity": "medium", "type": "命运"}
+  },
+  "approaches": {
+    "martial": {"label": "控制现场", "hint": "用武艺正面压住正在扩大的危险", "trait": "power", "result": "你以果断动作夺回了现场节奏，但也让所有目光集中到自己身上。"},
+    "physique": {"label": "承受风险", "hint": "依靠体魄为其他人争取处理时间", "trait": "peace", "result": "你承担了最沉重的一环，让局面没有立刻伤及旁人。"},
+    "perception": {"label": "辨认细节", "hint": "先观察异常与周围痕迹之间的联系", "trait": "spirit", "result": "被忽略的细节连成了因果，你看清了事情真正危险的部分。"},
+    "willpower": {"label": "回应异变", "hint": "稳定心神，抵抗现场对意识的影响", "trait": "destiny", "result": "你没有让恐惧替自己回答，异变因此显露出可以理解的轮廓。"},
+    "agility": {"label": "绕开锋芒", "hint": "利用地形和时机寻找不必硬碰的路线", "trait": "freedom", "result": "你从最窄的空隙穿过，让原本封死的局面出现了另一条路。"},
+    "social": {"label": "组织众人", "hint": "通过交涉让掌握不同信息的人共同应对", "trait": "peace", "result": "零散的说法终于互相印证，人群开始按照同一个判断行动。"}
+  },
+  "heroByLocation": {
+    "pallas": [{"id": "varus", "name": "韦鲁斯"}],
+    "windbreak": [{"id": "shen", "name": "慎"}, {"id": "ivern", "name": "艾翁"}],
+    "war_ruins": [{"id": "yasuo", "name": "亚索"}, {"id": "irelia", "name": "艾瑞莉娅"}],
+    "mountain_temple": [{"id": "shen", "name": "慎"}, {"id": "lee_sin", "name": "李青"}]
+  }
+}
