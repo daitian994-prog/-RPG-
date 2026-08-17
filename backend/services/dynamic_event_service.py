@@ -190,8 +190,15 @@ class DynamicEventService:
             intent = "aftermath" if thread.get("resolved") else THREAD_INTENTS[min(thread["stage"], len(THREAD_INTENTS) - 1)]
             pool.append(self._compose(state, location_id, seed, slot, category="world_thread", intent=intent, thread=thread))
             slot += 1
-        heroes = self.config["heroByLocation"].get(location_id, [])
-        if heroes:
-            hero = self._pick(heroes, seed, "hero")
-            pool.append(self._compose(state, location_id, seed, 30, category="hero", intent="hero_overlap", hero=hero))
+        # Stage 5 V1: only the persistent Yasuo actor may create a full hero candidate.
+        # Other canon champions remain knowledge-base records and are never sampled here.
+        yasuo = state.get("heroActors", {}).get("yasuo", {})
+        encounter = state.get("heroEncounter", {})
+        if (
+            yasuo.get("currentRegion") == "ionia_east"
+            and yasuo.get("currentLocation") == location_id
+            and yasuo.get("availability") == "available"
+            and encounter.get("level", 0) >= 3
+        ):
+            pool.append(self._compose(state, location_id, seed, 30, category="hero", intent="hero_overlap", hero={"id": "yasuo", "name": "亚索"}))
         return pool

@@ -11,6 +11,8 @@ from backend.services.ai_service import AIService
 from backend.services.dynamic_event_service import DynamicEventService
 from backend.services.event_director_service import EventDirectorService
 from backend.services.event_context_service import EventContextService
+from backend.services.hero_actor_service import HeroActorService
+from backend.services.narrative_authority_service import NarrativeAuthorityService
 from backend.services.outcome_engine import OutcomeEngine
 from backend.services.world_thread_service import WorldThreadService
 
@@ -45,6 +47,8 @@ class GameService:
         self.world_threads = WorldThreadService()
         self.director = EventDirectorService()
         self.event_context = EventContextService()
+        self.hero_actors = HeroActorService()
+        self.narrative_authority = NarrativeAuthorityService(self.ai.remote_ai)
         self.outcomes = OutcomeEngine()
         self.locations = self._read("locations.json")
         self.npcs = self._read("npc.json")
@@ -223,9 +227,12 @@ class GameService:
             changed = True
         if self.director.normalize(state):
             changed = True
+        if self.hero_actors.normalize(state):
+            changed = True
         for key, default in {
             "heroRelationships": {}, "stateChangeLog": [],
             "aiNarratorDebug": {"source": "none", "validation": {"valid": True, "errors": []}},
+            "narrativeAuthorityDebug": {},
         }.items():
             if key not in state:
                 state[key] = default
@@ -283,8 +290,12 @@ class GameService:
             "worldState": self.world_threads.initial_state(),
             "directorState": self.director.initial_state(),
             "heroRelationships": {},
+            "heroActors": self.hero_actors.initial_state(),
+            "heroActionLog": [],
+            "heroEncounter": {"heroId": "yasuo", "level": 0, "levelName": "none"},
             "stateChangeLog": [],
             "aiNarratorDebug": {"source": "none", "validation": {"valid": True, "errors": []}},
+            "narrativeAuthorityDebug": {},
         }
         self._sync_character_layers(state)
         self.outcomes.record(state, "new_game", self.outcomes.snapshot(state), metadata={"version": PROJECT_VERSION})
@@ -314,6 +325,7 @@ class GameService:
             "completed": state["completed_events"], "relationships": state["relationships"],
             "worldState": state.get("worldState", {}),
             "directorState": state.get("directorState", {}),
+            "heroActors": state.get("heroActors", {}),
         }
         return hashlib.sha256(json.dumps(snapshot, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()[:16]
 
@@ -344,6 +356,8 @@ class GameService:
         if location_id not in state["visited"]:
             state["visited"].append(location_id)
         state["latestWorldSignals"] = self.world_threads.advance(state, action="travel", location=location_id)
+        self.hero_actors.tick(state)
+        state["heroEncounter"] = self.hero_actors.encounter(state, location_id)
         if state["time"]["total_actions"] >= CHAPTER_ONE_ACTIONS and not state.get("chapter_complete"):
             state["chapter_phase"] = "invasion"
             state["location"] = "pallas"
@@ -358,11 +372,19 @@ class GameService:
         selection["directorContext"] = self.director.context(state, selection, location["name"])
         template["director"] = selection
         template["directorPrelude"] = selection["directorContext"]
-        template["eventContext"] = self.event_context.build(state, location, selection, template)
+        hero_context = self.hero_actors.canon_prompt(self.ai.lore, state) if state["heroEncounter"].get("level", 0) >= 3 or selection.get("heroId") == "yasuo" else None
+        template["eventContext"] = self.event_context.build(
+            state, location, selection, template, hero_context=hero_context, hero_encounter=state["heroEncounter"],
+        )
+        template, authority_debug = self.narrative_authority.materialize(template["eventContext"], template)
+        state["narrativeAuthorityDebug"] = authority_debug
         event = self.ai.generate_event(template, state, location, narrate=narrate)
         event["world_state_version"] = self.state_version(state)
         event["event_seed"] = selection["seed"]
         event["director"] = {key: value for key, value in selection.items() if key != "candidateWeights"}
+        event["heroEncounter"] = state["heroEncounter"]
+        event["narrativeAuthorityDebug"] = authority_debug
+        self.hero_actors.record_encounter(state, state["heroEncounter"].get("level", 0))
         state["pendingEvent"] = {
             "id": selection["eventId"], "templateId": selection["templateId"],
             "eventSeed": selection["seed"], "director": event["director"],
@@ -404,16 +426,52 @@ class GameService:
             base = next((event for event in (catalog or self.chapter_events) if event["id"] == template_id), None)
         if not base:
             raise ValueError("事件已经消散")
-        return {**base, "id": event_id, "template_id": template_id, "event_seed": seed, "director": director, "directorPrelude": prelude, "eventContext": event_context}
+        return {
+            **base, "id": event_id, "template_id": template_id, "event_seed": seed,
+            "director": director or base.get("director", {}), "directorPrelude": prelude,
+            "eventContext": event_context or base.get("eventContext"),
+        }
 
     def _chapter_boss_event(self, state: dict[str, Any], *, narrate: bool = True) -> dict[str, Any]:
-        template = next(event for event in self.chapter_events if event["id"] == "chapter1_boss")
+        template = dict(next(event for event in self.chapter_events if event["id"] == "chapter1_boss"))
         location = next(location for location in self.locations if location["id"] == "pallas")
+        runtime = state["heroActors"]["yasuo"]
+        relation = runtime["playerRelation"]
+        memories = runtime.get("importantMemories", [])
+        if memories:
+            meeting = f"亚索认出了你，也记得你们上次共同面对的事：{memories[-1]['summary']}。这次，他不再把你当作偶然闯入战局的陌生人。"
+        elif relation.get("recognition", 0) >= 10:
+            meeting = "亚索认出了你。他没有重提旧事，只用一个短促的点头承认你们已经见过。"
+        else:
+            meeting = "这是你第一次真正与这名剑客并肩站在同一场战斗里；他只报了自己的名字：亚索。"
+        template["text"] = f"{template['text']}\n\n{meeting}"
+        level = 5 if relation.get("trust", 0) >= 20 and relation.get("recognition", 0) >= 30 else 4
+        state["heroEncounter"] = self.hero_actors.encounter(state, "pallas", force_level=level)
+        selection = {
+            **template["director"], "eventId": template["id"], "templateId": template["id"],
+            "candidateId": "chapter1_boss:yasuo", "seed": template.get("event_seed", template["id"]),
+            "threadStageLabel": "终局入侵", "directorContext": "第一章终局：亚索只能协助侧翼，玩家必须决定帕拉斯的命运。",
+        }
+        template["event_seed"] = selection["seed"]
+        template["eventContext"] = self.event_context.build(
+            state, location, selection, template,
+            hero_context=self.hero_actors.canon_prompt(self.ai.lore, state),
+            hero_encounter=state["heroEncounter"],
+        )
         event = self.ai.generate_event(template, state, location, narrate=narrate)
         event["boss"] = template["boss"]
         event["chapter_finale"] = True
         event["world_state_version"] = self.state_version(state)
-        event["event_seed"] = template.get("event_seed", template["id"])
+        event["event_seed"] = selection["seed"]
+        event["director"] = selection
+        event["heroEncounter"] = state["heroEncounter"]
+        state["pendingEvent"] = {
+            "id": template["id"], "templateId": template["id"], "eventSeed": selection["seed"],
+            "director": selection, "directorPrelude": selection["directorContext"],
+            "eventContext": template["eventContext"], "template": template,
+        }
+        self.hero_actors.record_encounter(state, level)
+        save_game(state["id"], state)
         return event
 
     def narrate_event(self, game_id: str, event_id: str) -> str:
@@ -620,6 +678,7 @@ class GameService:
         state["action_points"] = max(0, state["action_points"] - 1)
         state["time"]["total_actions"] += 1
         state["latestWorldSignals"] = self.world_threads.advance(state, action="recover", location=state["location"])
+        self.hero_actors.tick(state)
         cost = {"actionCost": 1, "resourceCost": [], "moneyCost": 0, "futureWorldTimeCost": 1, "timeCost": 1}
         recovery = {"method": method, "injuryBefore": BODY_CONDITIONS[before]["state"], "injuryAfter": BODY_CONDITIONS[player["injurySeverity"]]["state"], "clearedStatuses": cleared, "legacyHpRecovered": hp_gain, "cost": cost}
         state["lastRecovery"] = recovery
@@ -640,6 +699,7 @@ class GameService:
         state["action_points"] -= 1
         state["time"]["total_actions"] += 1
         state["latestWorldSignals"] = self.world_threads.advance(state, action="world_intervention", location=state["location"])
+        self.hero_actors.tick(state)
         result["cost"] = {"actionCost": 1, "timeCost": 1}
         state["last_resolution"] = None
         state["player_state_version"] = int(state.get("player_state_version", 1)) + 1

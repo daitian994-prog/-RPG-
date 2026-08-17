@@ -276,8 +276,9 @@ class AIService:
 
     def generate_event(self, template: dict[str, Any], game: dict[str, Any], location: dict[str, Any], *, narrate: bool = True) -> dict[str, Any]:
         event = {**template, "choices": [{**choice} for choice in template["choices"]]}
-        event["title"] = template["title"].format(location=location["name"])
-        opening = template["text"].format(name=game["player"]["name"], location=location["name"])
+        authored_scene = template.get("sceneProposal")
+        event["title"] = template["title"] if authored_scene else template["title"].format(location=location["name"])
+        opening = template["text"] if authored_scene else template["text"].format(name=game["player"]["name"], location=location["name"])
         director = template.get("director", {})
         director_prelude = template.get("directorPrelude", "")
         atmospheres = {
@@ -309,13 +310,20 @@ class AIService:
         memory_line = ""
         if game["player"].get("memories"):
             memory_line = " 过往的经历在此刻闪回，你明白今天的选择也会成为往后无法抹去的一笔。"
-        event["text"] = "\n\n".join([
-            random.choice(atmospheres.get(location["id"], atmospheres["pallas"])),
-            director_prelude,
-            opening,
-            reactions[dominant] + memory_line,
-            "没有人替你催促，但局势正在悄然改变。你必须决定，自己愿意为怎样的结果承担代价。",
-        ])
+        if authored_scene:
+            creative_facts = authored_scene.get("playerObservableFacts", [])
+            event["text"] = "\n\n".join(dict.fromkeys(filter(None, [
+                opening, *creative_facts, authored_scene.get("immediateProblem"),
+                reactions[dominant] + memory_line,
+            ])))
+        else:
+            event["text"] = "\n\n".join([
+                random.choice(atmospheres.get(location["id"], atmospheres["pallas"])),
+                director_prelude,
+                opening,
+                reactions[dominant] + memory_line,
+                "没有人替你催促，但局势正在悄然改变。你必须决定，自己愿意为怎样的结果承担代价。",
+            ])
         for index, choice in enumerate(event["choices"]):
             choice["assessment"] = self.assess_choice(event, choice, game, index)
         event_temperatures = {"日常": 0.60, "NPC": 0.60, "成长": 0.58, "探索": 0.64, "命运": 0.70, "战斗": 0.55}
@@ -337,6 +345,7 @@ class AIService:
                 "玩家性格": game["player"]["personality"],
                 "已有记忆": game["player"].get("memories", [])[-3:],
                 "可选行动": [choice["text"] for choice in event["choices"]],
+                "AI现场提案": template.get("sceneProposal"),
                 "官方世界观检索": self.lore.context_for_event(location["id"], event["type"], opening),
                 "硬性边界": "程序已经决定Thread、Stage、Location、Intent与强度。只扩写这次局部现场，不修改选项，不替你行动，不推进世界阶段，不创造重大世界结果，不提前结算，不描述主角获得、收起或带走任何新物品与线索。",
             }
@@ -406,6 +415,19 @@ class AIService:
         text += f"\n\n{reflections.get(event['type'], reflections['探索'])}"
         text += f" 此刻的{location['name']}看起来与片刻前没有区别，但你的道路已经留下新的偏转。"
         text += " 你把当时的声音、气味与每一个迟疑都记了下来，因为未来的某次相逢，或许会要求你再次回答今天的问题。"
+        required_outcome = []
+        if outcome:
+            required_outcome.append(f"结果档位必须表现为：{outcome['label']}")
+            if outcome.get("code") == "partial":
+                required_outcome.append("玩家达成主要目标，但必须具体表现已经确定的局部代价")
+            elif outcome.get("code") == "failure":
+                required_outcome.append("玩家没有达成主要目标，并形成一个可继续处理的局部问题")
+            if outcome.get("hp_loss"):
+                required_outcome.append(f"必须表现身体受到伤害，但不得改变已经确定的伤害量：{outcome['hp_loss']}")
+            if outcome.get("grants_items"):
+                required_outcome.append("只能表现程序已明确允许获得的物品或线索，不得额外创造奖励")
+        if world_feedback and world_feedback.get("newPlayableSituation"):
+            required_outcome.append("必须自然形成后续问题：" + world_feedback["newPlayableSituation"])
         facts = {
                 "eventContext": event.get("eventContext"),
                 "事件": event["title"],
@@ -416,6 +438,18 @@ class AIService:
                 "结算": outcome or {"label": "固定结果"},
                 "战斗描述": battle_text,
                 "程序已写回的世界反馈": world_feedback or {},
+                "Hard Facts": (event.get("eventContext") or {}).get("hardFacts", []),
+                "Required Outcome": required_outcome,
+                "Forbidden Changes": (event.get("eventContext") or {}).get("forbiddenChanges", []) + [
+                    "不得改写结果档位、奖励、关系数值、伤势、物品归属或英雄重大状态",
+                    "普通结果不得导致亚索死亡、永久残废、改变阵营或泄露全部秘密",
+                ],
+                "Creative Freedom": [
+                    "自由决定行动过程中的具体动作、声音、对白和空间细节",
+                    "自由决定部分成功的代价如何在现场具体发生",
+                    "自由决定失败如何演化成符合Required Outcome的局部问题",
+                    "自由表现NPC与亚索符合角色卡的反应，但不得越过规则结果",
+                ],
                 "本地保底叙事": text,
                 "官方世界观检索": self.lore.context_for_event(
                     location["id"], event["type"], f"{event['title']} {consequence} {battle_text}"

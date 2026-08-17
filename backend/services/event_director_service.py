@@ -85,6 +85,15 @@ class EventDirectorService:
                 "locationRelevance": profile.get("locationRelevance", "high"),
                 "dynamicComponents": event.get("components", {}),
             }
+            if candidate.get("heroId"):
+                runtime = state.get("heroActors", {}).get(candidate["heroId"])
+                if not runtime or runtime.get("currentRegion") != "ionia_east" or runtime.get("currentLocation") != location or runtime.get("availability") != "available":
+                    continue
+                candidate["heroRuntime"] = {
+                    "currentRegion": runtime["currentRegion"], "currentLocation": runtime["currentLocation"],
+                    "currentGoal": runtime["currentGoal"], "availability": runtime["availability"],
+                    "lastEncounterTime": runtime.get("lastEncounterTime"), "playerRelation": runtime.get("playerRelation", {}),
+                }
             if candidate["threadId"]:
                 thread = next((item for item in state.get("worldState", {}).get("activeThreads", []) if item["id"] == candidate["threadId"]), None)
                 if not thread:
@@ -148,6 +157,22 @@ class EventDirectorService:
             "playerFocus": round(focus, 4), "worldRelevance": round(relevance, 4),
             "narrativeBudget": round(budget, 4), "randomFactor": round(random_factor, 4),
         }
+        if candidate.get("heroId"):
+            runtime = state.get("heroActors", {}).get(candidate["heroId"], {})
+            relation = runtime.get("playerRelation", {})
+            world_time = int(state.get("worldState", {}).get("worldTime", 0))
+            last_encounter = runtime.get("lastEncounterTime")
+            gap = 99 if last_encounter is None else world_time - last_encounter
+            encounter_debug = state.get("heroEncounter", {}).get("weightDebug", {})
+            modifiers.update({
+                "heroLocationOverlap": 1.0 if runtime.get("currentLocation") == state.get("location") else 0.0,
+                "heroGoalRelevance": round(runtime.get("activityZones", {}).get(state.get("location"), 0) / 100, 4),
+                "heroThreadRelevance": encounter_debug.get("threadRelevance", 1.0),
+                "heroAvailability": 1.0 if runtime.get("availability") == "available" else 0.0,
+                "heroRelationship": round(1 + (relation.get("recognition", 0) + relation.get("trust", 0) + relation.get("respect", 0)) / 180, 4),
+                "heroRecency": 0.22 if gap <= 1 else 0.55 if gap <= 3 else 1.0,
+                "heroDirector": encounter_debug.get("directorModifier", 1.0),
+            })
         final = candidate["baseWeight"]
         for value in modifiers.values():
             final *= value

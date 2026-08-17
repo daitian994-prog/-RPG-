@@ -26,6 +26,7 @@ class OutcomeEngine:
                 "inventory": state.get("player", {}).get("inventory", []),
             },
             "relationships": state.get("relationships", {}), "heroRelationships": state.get("heroRelationships", {}),
+            "heroActors": state.get("heroActors", {}),
             "worldState": state.get("worldState", {}), "directorState": state.get("directorState", {}),
             "aiNarratorDebug": state.get("aiNarratorDebug", {}),
         })
@@ -89,5 +90,30 @@ class OutcomeEngine:
             relation["stage"] = self._relation_stage(relation["score"])
             relation["history"].append({"worldTime": state["time"]["total_actions"], "eventId": director.get("eventId"), "tier": tier, "delta": delta})
             relation["history"] = relation["history"][-12:]
-            feedback["hero"] = {"id": hero_id, "delta": delta, "score": relation["score"], "stage": relation["stage"]}
+            runtime = state.get("heroActors", {}).get(hero_id)
+            memory = None
+            if runtime:
+                actor_relation = runtime.setdefault("playerRelation", {"recognition": 0, "trust": 0, "respect": 0, "alignment": 0})
+                actor_relation["recognition"] = min(100, max(actor_relation["recognition"], 12) + (8 if tier in {"critical", "success"} else 3))
+                actor_relation["trust"] = max(-100, min(100, actor_relation["trust"] + delta))
+                actor_relation["respect"] = max(-100, min(100, actor_relation["respect"] + (5 if tier == "critical" else 3 if tier == "success" else 1 if tier == "partial" else -1)))
+                personality = choice.get("result", {}).get("personality", {})
+                alignment_delta = personality.get("peace", 0) + personality.get("freedom", 0) - personality.get("power", 0)
+                actor_relation["alignment"] = max(-100, min(100, actor_relation["alignment"] + max(-3, min(3, alignment_delta))))
+                if tier in {"critical", "success", "failure"}:
+                    importance = 4 if tier == "critical" else 3
+                    memory = {
+                        "id": f"{director.get('eventId', 'event')}:{choice.get('id', 'choice')}",
+                        "type": "shared_action" if tier != "failure" else "failed_commitment",
+                        "summary": f"玩家在{director.get('eventId', '一次相逢')}中选择“{choice.get('semanticAction', choice.get('text'))}”，结果为{outcome['label']}。",
+                        "importance": importance, "worldTime": state.get("worldState", {}).get("worldTime", 0),
+                        "relatedThread": director.get("threadId"),
+                    }
+                    memories = runtime.setdefault("importantMemories", [])
+                    if memory["id"] not in {item["id"] for item in memories}:
+                        memories.append(memory)
+                        runtime["importantMemories"] = memories[-12:]
+                if tier in {"critical", "success"} and director.get("threadId") in runtime.get("activeThreads", []):
+                    runtime["goalProgress"] = min(100, runtime.get("goalProgress", 0) + (4 if tier == "critical" else 2))
+            feedback["hero"] = {"id": hero_id, "delta": delta, "score": relation["score"], "stage": relation["stage"], "runtimeRelation": copy.deepcopy(runtime.get("playerRelation")) if runtime else None, "importantMemory": memory}
         return feedback

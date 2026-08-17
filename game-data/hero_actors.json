@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "actors": [
+    {
+      "id": "yasuo",
+      "protectedCanonHero": true,
+      "currentRegion": "ionia_east",
+      "initialLocation": "pallas",
+      "activityZones": {
+        "pallas": 15,
+        "windbreak": 20,
+        "war_ruins": 55,
+        "mountain_temple": 10
+      },
+      "currentGoal": {
+        "id": "investigate_noxian_remnants",
+        "type": "investigation",
+        "summary": "调查艾欧尼亚东部最近出现的诺克萨斯异常活动",
+        "threadId": "noxian_remnants"
+      },
+      "activeThreads": ["noxian_remnants"],
+      "routeGraph": {
+        "pallas": ["pallas", "windbreak", "war_ruins", "mountain_temple"],
+        "windbreak": ["windbreak", "pallas"],
+        "war_ruins": ["war_ruins", "pallas"],
+        "mountain_temple": ["mountain_temple", "pallas"]
+      },
+      "narrativePowerBoundary": [
+        "普通事件不得令亚索死亡、永久残废或改变阵营",
+        "普通杂兵不能轻易击败亚索",
+        "亚索不得替玩家完成关键决定或自动解决大型世界危机",
+        "亚索可以调查、延缓局势、留下痕迹并创造新的行动机会"
+      ]
+    }
+  ]
+}

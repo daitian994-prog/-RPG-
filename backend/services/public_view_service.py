@@ -51,7 +51,11 @@ class PublicViewService:
         result["player"] = self._player(game["player"])
         result["knownWorldThreads"] = self._known_threads(game)
         result["focusedWorldTopics"] = list(game.get("directorState", {}).get("focus", []))
-        for key in ("worldState", "directorState", "pendingEvent", "aiNarratorDebug", "stateChangeLog", "check_state_version"):
+        for key in (
+            "worldState", "directorState", "pendingEvent", "aiNarratorDebug", "stateChangeLog",
+            "check_state_version", "heroActors", "heroActionLog", "heroEncounter",
+            "narrativeAuthorityDebug",
+        ):
             result.pop(key, None)
         if result.get("last_resolution"):
             result["last_resolution"] = self.resolution(result["last_resolution"], debug=False)

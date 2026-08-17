@@ -3,6 +3,7 @@ import unittest
 
 from backend.services.dynamic_event_service import DynamicEventService
 from backend.services.event_director_service import EventDirectorService
+from backend.services.hero_actor_service import HeroActorService
 from backend.services.world_thread_service import WorldThreadService
 
 
@@ -15,9 +16,12 @@ class EventDirectorServiceTest(unittest.TestCase):
             "id": "director-test", "time": {"total_actions": 0},
             "player": {"bodyCondition": {"label": "良好", "state": "healthy"}, "coreAbilities": {key: 9 for key in ("martial", "physique", "perception", "willpower", "agility", "social")}},
             "worldState": self.world_threads.initial_state(), "directorState": self.director.initial_state(),
+            "heroActors": HeroActorService().initial_state(),
+            "heroEncounter": {"heroId": "yasuo", "level": 4, "weightDebug": {}},
         }
 
     def pool(self, location="windbreak"):
+        self.state["location"] = location
         return self.generator.generate_pool(self.state, location)
 
     def test_candidates_expose_components_and_complete_weight_snapshot(self):
@@ -27,7 +31,10 @@ class EventDirectorServiceTest(unittest.TestCase):
             self.assertTrue(candidate["templateId"].startswith("dyn-"))
             self.assertTrue(candidate["dynamicComponents"])
             self.assertGreater(candidate["finalWeight"], 0)
-            self.assertEqual(set(candidate["modifiers"]), {"threadStage", "urgency", "tension", "recentHistory", "playerFocus", "worldRelevance", "narrativeBudget", "randomFactor"})
+            base = {"threadStage", "urgency", "tension", "recentHistory", "playerFocus", "worldRelevance", "narrativeBudget", "randomFactor"}
+            self.assertTrue(base.issubset(candidate["modifiers"]))
+            if candidate["category"] == "hero":
+                self.assertTrue({"heroLocationOverlap", "heroGoalRelevance", "heroThreadRelevance", "heroAvailability", "heroRelationship", "heroRecency", "heroDirector"}.issubset(candidate["modifiers"]))
 
     def test_director_reads_world_threads_without_advancing_them(self):
         before = copy.deepcopy(self.state["worldState"])
@@ -48,12 +55,13 @@ class EventDirectorServiceTest(unittest.TestCase):
 
     def test_forty_explorations_generate_more_than_twenty_unique_events(self):
         locations = ["pallas", "windbreak", "war_ruins", "mountain_temple"]
-        generated_ids, selected, component_sets = set(), [], set()
+        generated_ids, selected, component_sets, saw_hero_candidate = set(), [], set(), False
         for index in range(40):
             location = locations[index % 4]
             self.state["time"]["total_actions"] = index + 1
             self.state["worldState"]["worldTime"] = index + 1
             pool = self.pool(location)
+            saw_hero_candidate = saw_hero_candidate or any(item.get("directorProfile", {}).get("category") == "hero" for item in pool)
             generated_ids.update(item["id"] for item in pool)
             component_sets.update(tuple(item["components"].values()) for item in pool)
             choice = self.director.select(self.state, location, pool)
@@ -63,7 +71,7 @@ class EventDirectorServiceTest(unittest.TestCase):
         self.assertGreater(len(component_sets), 80)
         self.assertTrue(all(not item["templateId"].startswith("e") for item in selected))
         self.assertIn("world_thread", {item["category"] for item in selected})
-        self.assertIn("hero", {item["category"] for item in selected})
+        self.assertTrue(saw_hero_candidate)
 
     def test_same_snapshot_builds_same_pool_and_selection(self):
         first_state, second_state = copy.deepcopy(self.state), copy.deepcopy(self.state)

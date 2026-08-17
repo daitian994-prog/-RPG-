@@ -4,7 +4,7 @@
     "codename": "Runeterra: The Nameless",
     "type": "手机竖屏优先的 AI 原生互动 RPG Web Demo",
     "setting": "玩家以艾欧尼亚东部的普通人身份成长，在地点、关系、世界线程与动态事件共同驱动的旅途中形成自己的故事。",
-    "current_stage": "阶段 4：完整闭环与 AI 叙事集成（已完成）"
+    "current_stage": "阶段 5：AI 叙事权限重构与亚索 Hero Actor 试点（已完成）"
   },
   "systems": [
     {"name": "人物创建与成长", "status": "已完成", "details": "六次无属性标签的情境选择塑造五维人格；出生信息、六项核心能力、伤势、命运倾向、物品与关系持续写回存档。"},
@@ -12,7 +12,8 @@
     {"name": "世界线程", "status": "已完成", "details": "世界线程拥有阶段、紧迫度、认知、干预和世界效果，不依赖玩家在场也能随时间推进。"},
     {"name": "动态事件导演", "status": "已完成", "details": "常规事件不再从固定 20 个事件中抽取；系统即时组合现场，并先生成 2—4 条目标与策略不同的行动，再映射能力，支持无需检定与持有条件行动。"},
     {"name": "统一检定与结算", "status": "已完成", "details": "所有风险选择使用可解释的成功率和稳定 Seed，产生大成功、成功、部分成功、失败四级结果并写回状态。"},
-    {"name": "AI 叙事契约", "status": "已完成", "details": "AI 只负责正文、选项表现、NPC 台词与气氛；概率、随机数、结果、奖励和线程推进由程序权威决定，失败自动回退本地叙事。"},
+    {"name": "AI 叙事权限", "status": "已完成", "details": "AI 在 Narrative Envelope 内创造具体现场、普通NPC、局部物件、对白与行动语义；程序验证后映射能力、检定和难度，并独占概率、随机数、结果、奖励和线程推进。"},
+    {"name": "亚索 Hero Actor", "status": "已完成", "details": "亚索拥有持续位置、目标进度、行动点、可用状态、四维玩家关系与重要记忆；按合理路线自主调查，以六级显现进入事件，但不能替玩家解决重大线程。"},
     {"name": "艾欧尼亚知识库", "status": "已完成", "details": "英雄卡片整合人物传记与关联故事；地点、派系、时间线、关系与来源存入 SQLite，可在管理器中检索、查看和维护。"},
     {"name": "地图交互", "status": "已完成", "details": "大陆总览标注艾欧尼亚地点；未开放地点灰显，帕拉斯可进入局部地图查看四个探索地点。"},
     {"name": "第一章闭环", "status": "已完成", "details": "冬末触发青木村入侵、亚索相遇与章节 Boss；胜负产生不同结果并可获得章节遗物。"},
@@ -20,7 +21,7 @@
   ],
   "architecture": [
     {"layer": "玩家网页", "technology": "React + Vite", "responsibility": "人物创建、地图、事件、结算与人物档案；开发视图仅在本地显式开启"},
-    {"layer": "游戏 API", "technology": "FastAPI", "responsibility": "游戏状态机、旅行、动态事件、检定、线程、恢复、对话与叙事流"},
+    {"layer": "游戏 API", "technology": "FastAPI", "responsibility": "游戏状态机、旅行、动态事件、检定、线程、Hero Actor、恢复、对话与叙事权限验证"},
     {"layer": "本地持久化", "technology": "SQLite", "responsibility": "游戏存档、AI 节点、知识库与中文官网资料快照"},
     {"layer": "生产持久化", "technology": "Vercel Runtime Cache", "responsibility": "无状态函数环境中的试玩者 JSON 存档"},
     {"layer": "AI 接入", "technology": "OpenAI-compatible / DeepSeek", "responsibility": "可选的叙事生成；无 Key 时使用本地规则文案"}
@@ -50,6 +51,7 @@
       "常规事件为程序化动态组合；chapter_events.json 只保存明确的章节终局事件。",
       "生产环境不暴露 /admin，AI 密钥只保存在服务端。",
       "玩家接口默认使用公开投影，不下发导演候选、线程数值、随机种子或叙事校验记录。",
+      "AI 只提交现场与行动语义；能力、是否检定、难度、概率、结果档位和状态写回均以服务端程序为准。",
       "接口变更必须同步更新本页、CHANGELOG.md、VERSION 与前端 package 版本。"
     ]
   },
@@ -59,6 +61,7 @@
     "game-data/world_threads.json：世界线程定义",
     "game-data/dynamic_event_components.json：动态事件组件",
     "game-data/event_director.json：导演权重与预算",
+    "game-data/hero_actors.json：亚索 Hero Actor 配置、目标、活动区域、路线与叙事边界",
     "game-data/check_profiles.json：统一检定参数",
     "game-data/chapter_events.json：仅章节终局固定事件",
     "game-data/items.json 与 npc.json：物品和 NPC",

@@ -30,6 +30,21 @@ class GameLoopTest(unittest.TestCase):
         save_game(game["id"], game)
         return event_id
 
+    def test_chapter_yasuo_meeting_reflects_first_meeting_recognition_and_memory(self):
+        first = self.service.new_game(["peace"] * 6)
+        first_event = self.service._chapter_boss_event(first, narrate=False)
+        self.assertIn("第一次真正与这名剑客", first_event["text"])
+
+        known = self.service.new_game(["peace"] * 6)
+        known["heroActors"]["yasuo"]["playerRelation"]["recognition"] = 10
+        known_event = self.service._chapter_boss_event(known, narrate=False)
+        self.assertIn("亚索认出了你", known_event["text"])
+
+        remembered = self.service.new_game(["peace"] * 6)
+        remembered["heroActors"]["yasuo"]["importantMemories"] = [{"summary": "你们曾在遗迹共同追查斥候"}]
+        memory_event = self.service._chapter_boss_event(remembered, narrate=False)
+        self.assertIn("你们曾在遗迹共同追查斥候", memory_event["text"])
+
     def test_complete_action_loop(self):
         game = self.service.new_game(["peace", "power", "freedom", "spirit", "destiny", "peace+spirit"])
         self.assertEqual(game["action_points"], 3)
@@ -72,7 +87,7 @@ class GameLoopTest(unittest.TestCase):
         self.assertTrue(game["player"]["inventory"][0]["description"])
         self.assertNotIn("bonuses", game["player"]["inventory"][0])
         self.assertIn("effects", game["player"]["inventory"][0])
-        self.assertEqual(game["gameVersion"], "0.3.13")
+        self.assertEqual(game["gameVersion"], "0.3.14")
 
     def test_world_thread_intervention_costs_time_and_persists(self):
         game = self.service.new_game(["peace", "power", "freedom", "spirit", "destiny", "peace"])
@@ -119,7 +134,7 @@ class GameLoopTest(unittest.TestCase):
     def test_body_injury_modifier_affects_checks(self):
         game = self.service.new_game(["peace", "power", "freedom", "spirit", "destiny", "power"])
         event = self._dynamic_event(game, attribute="martial")
-        index = next(i for i, choice in enumerate(event["choices"]) if choice["attribute"] == "martial")
+        index = next(i for i, choice in enumerate(event["choices"]) if choice.get("attribute") == "martial")
         healthy = self.service.ai.assess_choice(event, event["choices"][index], game, index)["final_probability"]
         game["player"]["injurySeverity"] = 2
         self.service._sync_character_layers(game)

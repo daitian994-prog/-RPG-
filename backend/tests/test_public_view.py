@@ -14,7 +14,10 @@ class PublicViewTest(unittest.TestCase):
     def test_player_contract_omits_internal_state(self):
         game = self.games.new_game(["peace"] * 6)
         view = self.views.game(game)
-        for key in ("worldState", "directorState", "pendingEvent", "aiNarratorDebug", "stateChangeLog"):
+        for key in (
+            "worldState", "directorState", "pendingEvent", "aiNarratorDebug", "stateChangeLog",
+            "heroActors", "heroActionLog", "heroEncounter", "narrativeAuthorityDebug",
+        ):
             self.assertNotIn(key, view)
         self.assertNotIn("legacyCombatStats", view["player"])
         self.assertNotIn("attributes", view["player"])
