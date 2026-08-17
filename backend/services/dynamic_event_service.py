@@ -74,9 +74,15 @@ class DynamicEventService:
         if player.get("clues"):
             clue = player["clues"][0]
             candidates.insert(0, {"id": "use-clue", "semanticAction": f"用已有线索“{clue['name']}”核对现场", "goal": "验证已知信息", "approach": "以线索缩小判断范围", "ability": "perception", "risk": "低", "outcome": "information", "trait": "spirit", "duplicateGroup": "clue", "requirement": {"kind": "clue", "id": clue.get("id"), "name": clue["name"]}, "text": f"用“{clue['name']}”核对{subject}的细节", "hint": "已有线索会让判断更有根据"})
-        if player.get("traits"):
-            trait = player["traits"][0]
+        actionable_traits = [
+            trait for trait in player.get("traits", [])
+            if trait.get("usableInEvents") is True and trait.get("eventAction")
+        ]
+        if actionable_traits:
+            trait = actionable_traits[0]
+            event_action = trait["eventAction"]
             candidates.insert(1, {"id": "use-trait", "semanticAction": f"凭借“{trait['name']}”稳定现场", "goal": "为他人争取时间", "approach": "发挥已经形成的个人特质", "ability": "willpower", "risk": "中", "outcome": "safety", "trait": "peace", "duplicateGroup": "trait", "requirement": {"kind": "trait", "id": trait["id"], "name": trait["name"]}, "text": f"凭借“{trait['name']}”稳住局面，再处理{subject}", "hint": "你的经历让这条行动成为可能"})
+            candidates[1].update({key: value for key, value in event_action.items() if key in {"semanticAction", "goal", "approach", "ability", "risk", "text", "hint"}})
 
         rejected: list[dict[str, str]] = []
         valid: list[dict[str, Any]] = []

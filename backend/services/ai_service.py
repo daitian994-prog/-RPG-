@@ -311,11 +311,9 @@ class AIService:
         if game["player"].get("memories"):
             memory_line = " 过往的经历在此刻闪回，你明白今天的选择也会成为往后无法抹去的一笔。"
         if authored_scene:
-            creative_facts = authored_scene.get("playerObservableFacts", [])
-            event["text"] = "\n\n".join(dict.fromkeys(filter(None, [
-                opening, *creative_facts, authored_scene.get("immediateProblem"),
-                reactions[dominant] + memory_line,
-            ])))
+            # NarrativeAuthority has already produced and validated display-ready prose.
+            # Observable facts remain structured context and must not be appended again.
+            event["text"] = opening
         else:
             event["text"] = "\n\n".join([
                 random.choice(atmospheres.get(location["id"], atmospheres["pallas"])),
@@ -349,7 +347,13 @@ class AIService:
                 "官方世界观检索": self.lore.context_for_event(location["id"], event["type"], opening),
                 "硬性边界": "程序已经决定Thread、Stage、Location、Intent与强度。只扩写这次局部现场，不修改选项，不替你行动，不推进世界阶段，不创造重大世界结果，不提前结算，不描述主角获得、收起或带走任何新物品与线索。",
             }
-        if narrate:
+        if authored_scene:
+            game["aiNarratorDebug"] = {
+                "phase": "event", "source": template.get("narrativeAuthoritySource", "fallback"),
+                "validation": {"valid": True, "errors": []},
+                "note": "结构化场景已经是最终正文，未进行第二次事件润色调用。",
+            }
+        elif narrate:
             event["text"] = self._contract_narrate(
                 kind="boss_event" if is_boss else "event", facts=facts, game=game, fallback=event["text"],
                 event_type=event["type"], location_id=location["id"],
@@ -410,8 +414,27 @@ class AIService:
                 text += f"\n\n{failure_details.get(event['type'], failure_details['探索'])}\n\n{outcome['setback_text']}"
         else:
             text += f"\n\n{consequence}"
+        scene = event.get("sceneProposal") or {}
+        if scene:
+            actors = scene.get("localActors") or ["在场的人"]
+            objects = scene.get("localObjects") or ["现场留下的痕迹"]
+            actor = actors[0]
+            obj = objects[0]
+            immediate = scene.get("immediateProblem", "眼前的问题")
+            tier = (outcome or {}).get("code", "success")
+            followthrough = {
+                "critical": f"{actor}顺着你指出的位置重新查看{obj}，很快确认了最关键的一处变化。原本围在旁边的人开始让出空间，{immediate}不再只是无人敢碰的僵局。",
+                "success": f"{actor}依照你的判断重新处理{obj}，先前互相冲突的说法终于有了可以核对的次序。{immediate}仍未完全消失，但现场已经知道下一步该做什么。",
+                "partial": f"{actor}接受了你指出的方向，却不得不先处理行动留下的代价。{obj}提供了答案的一部分，{immediate}则以另一种形式继续留在现场。",
+                "failure": f"{actor}试图接住你未完成的行动，但{obj}附近最关键的变化已经错过。{immediate}没有停止，反而让在场的人更难判断接下来该相信谁。",
+                "success_automatic": f"{actor}看着你主动退出眼前争执，没有追赶。{obj}仍留在原处，而{immediate}会在没有你介入的情况下继续发展。",
+            }
+            key = "success_automatic" if (outcome or {}).get("requires_check") is False else tier
+            text += f"\n\n{followthrough.get(key, followthrough['success'])}"
         if battle_text:
             text += f" {battle_text}"
+        if world_feedback and world_feedback.get("newPlayableSituation"):
+            text += f"\n\n{world_feedback['newPlayableSituation']}这不是对失败的补偿，而是它真正留下、之后仍需面对的麻烦。"
         text += f"\n\n{reflections.get(event['type'], reflections['探索'])}"
         text += f" 此刻的{location['name']}看起来与片刻前没有区别，但你的道路已经留下新的偏转。"
         text += " 你把当时的声音、气味与每一个迟疑都记了下来，因为未来的某次相逢，或许会要求你再次回答今天的问题。"

@@ -55,6 +55,8 @@ class GameLoopTest(unittest.TestCase):
         self.assertIn("changes", resolution)
         self.assertIn(event["id"], game["completed_events"])
         self.assertEqual(len(game["player"]["memories"]), 1)
+        self.assertGreaterEqual(len("".join(resolution["narrative"].split())), 250)
+        self.assertNotIn("已经确定的结果", resolution["narrative"])
 
     def test_prepare_travel_resolves_facts_without_remote_narration(self):
         game = self.service.new_game(["peace", "power", "freedom", "spirit", "destiny", "peace"])
@@ -64,7 +66,19 @@ class GameLoopTest(unittest.TestCase):
         self.assertEqual(game["location"], "war_ruins")
         self.assertIn(len(event["choices"]), {2, 3, 4})
         self.assertTrue(all("assessment" in choice for choice in event["choices"]))
-        self.assertEqual(event["narrative_source"], "local")
+        self.assertEqual(event["narrative_source"], "fallback")
+        self.assertGreaterEqual(len("".join(event["text"].split())), 220)
+        self.assertGreaterEqual(len(event["text"].split("\n\n")), 4)
+        for fact in event["sceneProposal"]["playerObservableFacts"]:
+            self.assertLessEqual(event["text"].count(fact), 1)
+
+    def test_identity_trait_never_becomes_an_event_action(self):
+        game = self.service.new_game(["peace"] * 6)
+        self.assertEqual(game["player"]["traits"][0]["classification"], "identity")
+        for location in ("pallas", "windbreak", "war_ruins", "mountain_temple"):
+            pool = self.service.dynamic_events.generate_pool(game, location)
+            action_text = " ".join(choice["text"] for event in pool for choice in event["choices"])
+            self.assertNotIn("凭借“无名者”", action_text)
 
     def test_local_stream_falls_back_to_paragraph_ready_prose(self):
         game = self.service.new_game(["peace", "power", "freedom", "spirit", "destiny", "peace"])
@@ -73,6 +87,13 @@ class GameLoopTest(unittest.TestCase):
             chunks = list(self.service.stream_event(game["id"], event["id"]))
         self.assertTrue(chunks)
         self.assertIn("\n\n", "".join(chunks))
+
+    def test_structured_scene_is_not_sent_through_a_second_event_rewrite(self):
+        game = self.service.new_game(["peace"] * 6)
+        with patch.dict("os.environ", {"RUNETERRA_DISABLE_REMOTE_AI": "1"}, clear=False), patch.object(self.service.ai, "_contract_narrate") as contract:
+            _game, event = self.service.travel(game["id"], "windbreak", narrate=True)
+        contract.assert_not_called()
+        self.assertEqual(event["narrative_source"], "fallback")
 
     def test_world_state_version_invalidates_after_player_change(self):
         game = self.service.new_game(["peace", "power", "freedom", "spirit", "destiny", "peace"])
@@ -87,7 +108,7 @@ class GameLoopTest(unittest.TestCase):
         self.assertTrue(game["player"]["inventory"][0]["description"])
         self.assertNotIn("bonuses", game["player"]["inventory"][0])
         self.assertIn("effects", game["player"]["inventory"][0])
-        self.assertEqual(game["gameVersion"], "0.3.14")
+        self.assertEqual(game["gameVersion"], "0.3.15")
 
     def test_world_thread_intervention_costs_time_and_persists(self):
         game = self.service.new_game(["peace", "power", "freedom", "spirit", "destiny", "peace"])
@@ -133,7 +154,11 @@ class GameLoopTest(unittest.TestCase):
 
     def test_body_injury_modifier_affects_checks(self):
         game = self.service.new_game(["peace", "power", "freedom", "spirit", "destiny", "power"])
-        event = self._dynamic_event(game, attribute="martial")
+        event = next(
+            event for location in ("pallas", "windbreak", "war_ruins", "mountain_temple")
+            for event in self.service.dynamic_events.generate_pool(game, location)
+            if any(choice.get("attribute") == "martial" for choice in event["choices"])
+        )
         index = next(i for i, choice in enumerate(event["choices"]) if choice.get("attribute") == "martial")
         healthy = self.service.ai.assess_choice(event, event["choices"][index], game, index)["final_probability"]
         game["player"]["injurySeverity"] = 2
@@ -164,7 +189,11 @@ class GameLoopTest(unittest.TestCase):
     def test_status_has_source_duration_and_real_modifier(self):
         game = self.service.new_game(["peace", "power", "freedom", "spirit", "destiny", "freedom"])
         game["player"]["statuses"] = [{"id": "tense", "name": "紧张", "source": "伏击", "duration": 2, "modifiers": {"agility": -10}}]
-        event = self._dynamic_event(game, attribute="agility")
+        event = next(
+            event for location in ("pallas", "windbreak", "war_ruins", "mountain_temple")
+            for event in self.service.dynamic_events.generate_pool(game, location)
+            if any(choice.get("attribute") == "agility" for choice in event["choices"])
+        )
         index = next(i for i, choice in enumerate(event["choices"]) if choice.get("attribute") == "agility")
         assessment = self.service.ai.assess_choice(event, event["choices"][index], game, index)
         self.assertTrue(any(item["source"] == "status" and item["value"] == -10 for item in assessment["applied_modifiers"]))

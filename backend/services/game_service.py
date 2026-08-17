@@ -180,8 +180,14 @@ class GameService:
             player["clues"] = []
             changed = True
         if "traits" not in player:
-            player["traits"] = [{"id": "nameless", "name": "无名者", "level": 1, "source": "角色背景", "modifiers": {}}]
+            player["traits"] = [{"id": "nameless", "name": "无名者", "level": 1, "source": "角色背景", "classification": "identity", "usableInEvents": False, "modifiers": {}}]
             changed = True
+        for trait in player.get("traits", []):
+            if trait.get("id") == "nameless":
+                if trait.get("classification") != "identity" or trait.get("usableInEvents") is not False:
+                    trait["classification"] = "identity"
+                    trait["usableInEvents"] = False
+                    changed = True
         if "injurySeverity" not in player:
             hp_ratio = player["attributes"]["hp"] / max(1, player["attributes"]["max_hp"])
             player["injurySeverity"] = 0 if hp_ratio >= .9 else 1 if hp_ratio >= .7 else 2 if hp_ratio >= .45 else 3 if hp_ratio >= .2 else 4
@@ -258,7 +264,7 @@ class GameService:
             "inventory": [],
             "statuses": [],
             "clues": [],
-            "traits": [{"id": "nameless", "name": "无名者", "level": 1, "source": "角色背景", "modifiers": {}}],
+            "traits": [{"id": "nameless", "name": "无名者", "level": 1, "source": "角色背景", "classification": "identity", "usableInEvents": False, "modifiers": {}}],
             "injurySeverity": 0,
         }
         player["fate_weights"] = player["fateAffinities"]

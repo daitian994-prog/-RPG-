@@ -15,6 +15,8 @@ class DeepSeekError(RuntimeError):
 class DeepSeekService:
     """Server-only OpenAI-compatible client with a SQLite active-node selector."""
 
+    _node_errors: dict[str, dict[str, Any]] = {}
+
     def __init__(self, repository: ApiNodeRepository | None = None) -> None:
         self.repository = repository or ApiNodeRepository()
         # Narrative calls must never leave the player staring at a blocked event screen.
@@ -44,6 +46,7 @@ class DeepSeekService:
 
     def status(self) -> dict[str, Any]:
         config = self.config()
+        shared_error = self._node_errors.get(str(config.get("id"))) if config else None
         return {
             "configured": bool(config),
             "source": "database" if config and config["id"] != "environment" else "environment" if config else None,
@@ -59,10 +62,21 @@ class DeepSeekService:
                     "key_mask": "••••••••",
                 } if config else None
             ),
-            "last_error": self.last_error,
+            "last_error": shared_error or self.last_error,
             "timeout_seconds": self.timeout,
             "key_exposed": False,
         }
+
+    def _record_error(self, selected: dict[str, Any], error_type: str, message: str, *, http_status: int | None = None) -> None:
+        self.last_error = error_type
+        diagnostic = {"type": error_type, "message": message, "nodeId": selected.get("id"), "model": selected.get("model")}
+        if http_status is not None:
+            diagnostic["httpStatus"] = http_status
+        self._node_errors[str(selected.get("id"))] = diagnostic
+
+    def _clear_error(self, selected: dict[str, Any]) -> None:
+        self.last_error = None
+        self._node_errors.pop(str(selected.get("id")), None)
 
     def generate(
         self,
@@ -104,8 +118,9 @@ class DeepSeekService:
             data = response.json()
             result_text = data["choices"][0]["message"]["content"].strip()
             if not result_text:
+                self._record_error(selected, "EmptyResponse", "AI 节点返回了空内容。")
                 raise DeepSeekError("API 返回了空内容。")
-            self.last_error = None
+            self._clear_error(selected)
             return {
                 "text": result_text,
                 "model": data.get("model", selected["model"]),
@@ -117,11 +132,20 @@ class DeepSeekService:
         except DeepSeekError:
             raise
         except httpx.HTTPStatusError as exc:
-            self.last_error = f"HTTP {exc.response.status_code}"
+            self._record_error(selected, "HTTPStatusError", f"AI 节点返回 HTTP {exc.response.status_code}。", http_status=exc.response.status_code)
             raise DeepSeekError(f"API 请求失败：HTTP {exc.response.status_code}") from exc
-        except (httpx.HTTPError, KeyError, ValueError, TypeError) as exc:
-            self.last_error = exc.__class__.__name__
-            raise DeepSeekError("API 请求失败，远端错误详情已隐藏。") from exc
+        except httpx.ConnectError as exc:
+            self._record_error(selected, "ConnectError", "无法连接 AI 节点，请检查本机网络、代理或节点地址。")
+            raise DeepSeekError("API 连接失败，请检查网络、代理或节点地址。") from exc
+        except httpx.TimeoutException as exc:
+            self._record_error(selected, "Timeout", f"AI 节点在 {self.timeout:g} 秒内没有响应。")
+            raise DeepSeekError("API 请求超时。") from exc
+        except httpx.HTTPError as exc:
+            self._record_error(selected, exc.__class__.__name__, "AI 节点发生网络传输错误。")
+            raise DeepSeekError("API 网络传输失败。") from exc
+        except (KeyError, ValueError, TypeError) as exc:
+            self._record_error(selected, "InvalidResponse", "AI 节点返回的数据结构无法解析。")
+            raise DeepSeekError("API 返回格式无法解析。") from exc
 
     def stream(
         self,
@@ -163,7 +187,7 @@ class DeepSeekService:
                         delta = chunk.get("choices", [{}])[0].get("delta", {}).get("content", "")
                         if delta:
                             yield delta
-            self.last_error = None
+            self._clear_error(selected)
         except (httpx.HTTPError, KeyError, ValueError, TypeError, json.JSONDecodeError) as exc:
-            self.last_error = exc.__class__.__name__
+            self._record_error(selected, exc.__class__.__name__, "AI 流式响应连接或解析失败。")
             raise DeepSeekError("API 流式请求失败，远端错误详情已隐藏。") from exc
