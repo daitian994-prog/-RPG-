@@ -4,7 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>符文之地 · 后端数据管理器</title>
-  <link rel="stylesheet" href="/admin/styles.css?v=2" />
+  <link rel="stylesheet" href="/admin/styles.css?v=3" />
+  <link rel="stylesheet" href="/admin/project-status.css?v=1" />
   <link rel="stylesheet" href="/admin/lore.css?v=4" />
   <link rel="stylesheet" href="/admin/lore-visuals.css?v=5" />
   <link rel="stylesheet" href="/admin/source-links.css?v=4" />
@@ -17,7 +18,7 @@
       <div>
         <p class="eyebrow">RUNETERRA · DATABASE CONSOLE</p>
         <h1>后端数据管理器</h1>
-        <p class="subtitle">统一维护 AI 接口节点与艾欧尼亚世界观知识库，数据实时保存到 SQLite。</p>
+        <p class="subtitle">统一维护 AI 节点、世界观知识库与可交付的项目开发记录。</p>
       </div>
       <button class="primary" id="primaryAction">＋ 新建节点</button>
     </header>
@@ -25,6 +26,7 @@
     <nav class="console-tabs" aria-label="数据管理区域">
       <button class="console-tab active" data-view="nodes"><span>接口</span>AI 节点</button>
       <button class="console-tab" data-view="lore"><span>资料</span>世界观知识库</button>
+      <button class="console-tab" data-view="project"><span>交付</span>项目总览与日志</button>
     </nav>
 
     <div id="nodesView">
@@ -49,6 +51,23 @@
       </section>
       <section class="lore-grid" id="loreGrid"></section>
       <section class="empty" id="loreEmpty" hidden><div class="empty-icon">◇</div><h2>没有找到资料</h2><p>换一个关键词，或在当前分类新建记录。</p></section>
+    </div>
+
+    <div id="projectView" hidden>
+      <section class="project-hero">
+        <div><p class="eyebrow">PROJECT SOURCE OF TRUTH</p><h2 id="projectName">正在读取项目记录…</h2><p id="projectSummary"></p></div>
+        <div class="version-seal"><span>当前版本</span><strong id="projectVersion">—</strong><small id="projectStage"></small></div>
+      </section>
+      <section class="project-actions">
+        <p>内容由 VERSION、CHANGELOG.md 与结构化项目记录实时生成，可直接交给网页端继续开发。</p>
+        <div><button class="ghost" id="copyProjectMarkdown">复制对接文档</button><button class="ghost" id="copyProjectJson">复制 JSON</button><button class="ghost" id="refreshProject">刷新</button></div>
+      </section>
+      <section class="project-section"><div class="section-title"><span>DELIVERED SYSTEMS</span><h2>当前已开发功能</h2></div><div class="project-system-grid" id="projectSystems"></div></section>
+      <section class="project-columns">
+        <div class="project-section"><div class="section-title"><span>ARCHITECTURE</span><h2>技术结构</h2></div><div class="architecture-list" id="projectArchitecture"></div></div>
+        <div class="project-section"><div class="section-title"><span>WEB HANDOFF</span><h2>网页端对接约定</h2></div><div class="handoff-panel" id="projectHandoff"></div></div>
+      </section>
+      <section class="project-section"><div class="section-title"><span>CHANGELOG</span><h2>版本更新日志</h2></div><div class="release-list" id="projectChangelog"></div></section>
     </div>
   </main>
 
@@ -83,6 +102,6 @@
 
   <div class="toast" id="toast"></div>
   <script src="/admin/lore-visuals.js?v=13"></script>
-  <script src="/admin/app.js?v=11"></script>
+  <script src="/admin/app.js?v=12"></script>
 </body>
 </html>

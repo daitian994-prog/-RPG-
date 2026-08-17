@@ -16,8 +16,9 @@ try {
     }
 
     $health = Invoke-RestMethod -Uri "http://127.0.0.1:8000/health" -TimeoutSec 3
-    if ($health.status -ne "ok") {
-        throw "The service health check did not return ok"
+    $expectedVersion = (Get-Content -Raw -LiteralPath (Join-Path $projectRoot "VERSION")).Trim()
+    if ($health.status -ne "ok" -or $health.version -ne $expectedVersion) {
+        throw "The service health check did not return the expected version $expectedVersion"
     }
 
     Start-Process $adminUrl

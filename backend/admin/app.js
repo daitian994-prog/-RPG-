@@ -1,13 +1,13 @@
 const api = '/api/admin';
 const categoryLabels = {metadata:'元数据',region:'地区总览',champions:'英雄',stories:'人物故事',places:'地点',factions:'派系',timeline:'时间线',relationships:'关系网',sources:'官方来源'};
-let nodes = [], loreRecords = [], loreSummary = null, entityCatalog = {}, officialRecords = [], currentView = 'nodes', currentCategory = 'champions', editingLoreId = null;
+let nodes = [], loreRecords = [], loreSummary = null, entityCatalog = {}, officialRecords = [], projectStatus = null, currentView = 'nodes', currentCategory = 'champions', editingLoreId = null;
 
 const $ = selector => document.querySelector(selector);
 function toast(message,error=false){const el=$('#toast');el.textContent=message;el.className=`toast show${error?' error':''}`;clearTimeout(toast.timer);toast.timer=setTimeout(()=>el.className='toast',2800);}
 async function request(url,options={}){const response=await fetch(url,{headers:{'Content-Type':'application/json'},...options});if(!response.ok){const data=await response.json().catch(()=>({}));throw new Error(data.detail||`请求失败 (${response.status})`);}return response.status===204?null:response.json();}
 function escapeHtml(value=''){const el=document.createElement('div');el.textContent=String(value);return el.innerHTML;}
 
-function setView(view){currentView=view;$('#nodesView').hidden=view!=='nodes';$('#loreView').hidden=view!=='lore';document.querySelectorAll('.console-tab').forEach(button=>button.classList.toggle('active',button.dataset.view===view));$('#primaryAction').textContent=view==='nodes'?'＋ 新建节点':'＋ 新建资料';if(view==='lore')loadLore();else loadNodes();}
+function setView(view){currentView=view;$('#nodesView').hidden=view!=='nodes';$('#loreView').hidden=view!=='lore';$('#projectView').hidden=view!=='project';document.querySelectorAll('.console-tab').forEach(button=>button.classList.toggle('active',button.dataset.view===view));$('#primaryAction').hidden=view==='project';$('#primaryAction').textContent=view==='nodes'?'＋ 新建节点':'＋ 新建资料';if(view==='lore')loadLore();else if(view==='project')loadProjectStatus();else loadNodes();}
 document.querySelectorAll('.console-tab').forEach(button=>button.onclick=()=>setView(button.dataset.view));
 
 function renderStatus(status){const active=status.active_node;$('#signal').classList.toggle('on',Boolean(active));$('#statusTitle').textContent=active?`${active.name} 正在工作`:'当前没有启用节点';$('#statusText').textContent=active?`${active.model} · ${active.base_url}`:'游戏将使用本地规则文案；开启节点后由后端调用 AI。';}
@@ -40,7 +40,18 @@ async function openOfficialStory(storyId,showDialog=false){try{const data=await 
 async function removeLore(record){if(!confirm(`确定从数据库删除“${record.title}”吗？该操作会影响事件检索。`))return;try{await request(`${api}/lore/${record.category}/${record.id}`,{method:'DELETE'});toast('知识资料已删除');await loadLore();}catch(e){toast(e.message,true);}}
 $('#loreForm').onsubmit=async event=>{event.preventDefault();let data;try{data=JSON.parse($('#loreData').value);}catch{toast('JSON 格式不正确，请检查逗号和引号。',true);return;}const category=$('#loreCategory').value,id=$('#loreId').value.trim(),title=$('#loreTitle').value.trim();const payload=editingLoreId?{title,data}:{id,title,data};$('#loreSaveButton').disabled=true;try{await request(`${api}/lore/${category}${editingLoreId?'/'+editingLoreId:''}`,{method:editingLoreId?'PUT':'POST',body:JSON.stringify(payload)});$('#loreDialog').close();toast('知识资料已保存，事件检索将立即使用');currentCategory=category;await loadLore();}catch(e){toast(e.message,true);}finally{$('#loreSaveButton').disabled=false;}};
 
+function renderProjectStatus(){
+  const data=projectStatus,p=data.project,w=data.web_integration;
+  $('#projectName').textContent=p.name;$('#projectSummary').textContent=p.setting;$('#projectVersion').textContent=`v${data.version}`;$('#projectStage').textContent=p.current_stage;
+  $('#projectSystems').innerHTML=data.systems.map(item=>`<article class="project-system"><header><h3>${escapeHtml(item.name)}</h3><b>${escapeHtml(item.status)}</b></header><p>${escapeHtml(item.details)}</p></article>`).join('');
+  $('#projectArchitecture').innerHTML=data.architecture.map(item=>`<div class="architecture-item"><b>${escapeHtml(item.layer)}</b><div><span>${escapeHtml(item.technology)}</span><small>${escapeHtml(item.responsibility)}</small></div></div>`).join('');
+  $('#projectHandoff').innerHTML=`<code>${escapeHtml(w.project_status)}</code><code>${escapeHtml(w.health)}</code><p class="security-note">游戏接口 · ${w.game_endpoints.length} 个</p><ul>${w.rules.map(rule=>`<li>${escapeHtml(rule)}</li>`).join('')}</ul>`;
+  $('#projectChangelog').innerHTML=data.changelog.map((release,index)=>`<details class="release" ${index===0?'open':''}><summary><b>v${escapeHtml(release.version)}</b><span>${escapeHtml(release.date)}</span></summary><ul>${release.changes.map(change=>`<li>${escapeHtml(change)}</li>`).join('')}</ul></details>`).join('');
+}
+async function loadProjectStatus(){try{projectStatus=await request(`${api}/project-status`);renderProjectStatus();}catch(e){$('#projectSystems').innerHTML=`<div class="project-error">${escapeHtml(e.message)}</div>`;toast(e.message,true);}}
+async function copyProject(kind){if(!projectStatus)await loadProjectStatus();if(!projectStatus)return;const text=kind==='json'?JSON.stringify({...projectStatus,integration_markdown:undefined},null,2):projectStatus.integration_markdown;try{await navigator.clipboard.writeText(text);toast(kind==='json'?'项目 JSON 已复制':'网页端对接文档已复制');}catch{toast('浏览器未授予剪贴板权限，请通过项目状态接口获取。',true);}}
+
 let searchTimer;$('#loreSearch').oninput=()=>{clearTimeout(searchTimer);searchTimer=setTimeout(loadLoreRecords,260);};
-$('#primaryAction').onclick=()=>currentView==='nodes'?openNodeDialog():openLoreDialog();$('#refreshButton').onclick=loadNodes;$('#closeButton').onclick=()=>$('#nodeDialog').close();$('#cancelButton').onclick=()=>$('#nodeDialog').close();$('#loreCloseButton').onclick=()=>$('#loreDialog').close();$('#loreCancelButton').onclick=()=>$('#loreDialog').close();
+$('#primaryAction').onclick=()=>currentView==='nodes'?openNodeDialog():openLoreDialog();$('#refreshButton').onclick=loadNodes;$('#refreshProject').onclick=loadProjectStatus;$('#copyProjectMarkdown').onclick=()=>copyProject('markdown');$('#copyProjectJson').onclick=()=>copyProject('json');$('#closeButton').onclick=()=>$('#nodeDialog').close();$('#cancelButton').onclick=()=>$('#nodeDialog').close();$('#loreCloseButton').onclick=()=>$('#loreDialog').close();$('#loreCancelButton').onclick=()=>$('#loreDialog').close();
 $('#officialLoreClose').onclick=()=>$('#officialLoreDialog').close();
 loadNodes();

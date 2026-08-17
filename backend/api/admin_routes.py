@@ -14,6 +14,7 @@ from backend.models.schemas import (
     LoreRecordUpdate,
 )
 from backend.services.deepseek_service import DeepSeekError, DeepSeekService
+from backend.services.project_status_service import get_project_status
 
 
 router = APIRouter(prefix="/api/admin", tags=["AI 节点管理"])
@@ -21,6 +22,11 @@ repository = ApiNodeRepository()
 lore_repository = LoreRepository()
 official_lore_repository = OfficialLoreRepository()
 ai_client = DeepSeekService(repository)
+
+
+@router.get("/project-status")
+def project_status():
+    return get_project_status()
 
 
 @router.get("/ai-nodes")

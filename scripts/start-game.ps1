@@ -4,7 +4,6 @@ $ErrorActionPreference = "Stop"
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $expectedVersion = (Get-Content -Raw -LiteralPath (Join-Path $projectRoot "VERSION")).Trim()
 $gameUrl = "http://127.0.0.1:8000/?v=$expectedVersion"
-$healthUrl = "$gameUrl/health"
 $healthUrl = "http://127.0.0.1:8000/health"
 $pidFile = Join-Path $projectRoot ".runeterra-server.json"
 
@@ -22,6 +21,35 @@ function Get-GameServerHealth {
     try {
         return Invoke-RestMethod -Uri $healthUrl -TimeoutSec 2
     } catch { return $null }
+}
+
+function Get-OwnedServerProcess {
+    if (-not (Test-Path -LiteralPath $pidFile)) { return $null }
+    try {
+        $record = Get-Content -Raw -LiteralPath $pidFile | ConvertFrom-Json
+        $process = Get-Process -Id ([int]$record.pid) -ErrorAction Stop
+        $recordedStart = ([datetime]$record.startedAtUtc).ToUniversalTime()
+        $actualStart = $process.StartTime.ToUniversalTime()
+        $sameStart = [Math]::Abs(($actualStart - $recordedStart).TotalSeconds) -lt 2
+        $sameExecutable = $process.Path -and $record.executable -and (
+            [System.IO.Path]::GetFullPath($process.Path) -eq [System.IO.Path]::GetFullPath([string]$record.executable)
+        )
+        if ($sameStart -and $sameExecutable) { return $process }
+    } catch {
+        return $null
+    }
+    return $null
+}
+
+function Stop-OwnedStaleServer {
+    param([string]$RunningVersion)
+    $ownedProcess = Get-OwnedServerProcess
+    if (-not $ownedProcess) { return $false }
+    Write-Host "Updating the project server from $RunningVersion to $expectedVersion..." -ForegroundColor Yellow
+    Stop-Process -Id $ownedProcess.Id -ErrorAction Stop
+    Wait-Process -Id $ownedProcess.Id -Timeout 8 -ErrorAction SilentlyContinue
+    Start-Sleep -Milliseconds 250
+    return $true
 }
 
 function Open-GameBrowser {
@@ -50,7 +78,9 @@ if ($existingHealth) {
         exit 0
     }
     $runningVersion = if ($existingHealth.version) { $existingHealth.version } else { "unknown/legacy" }
-    throw "Port 8000 is occupied by Runeterra version $runningVersion, but this launcher requires $expectedVersion. Stop the old game server first."
+    if (-not (Stop-OwnedStaleServer -RunningVersion $runningVersion)) {
+        throw "Port 8000 is occupied by Runeterra version $runningVersion, but it cannot be verified as this project's server. Stop that process manually."
+    }
 }
 
 $pythonExe = Find-Python
@@ -73,6 +103,8 @@ $serverProcess = [System.Diagnostics.Process]::Start($startInfo)
     pid = $serverProcess.Id
     startedAtUtc = $serverProcess.StartTime.ToUniversalTime().ToString("O")
     executable = $pythonExe
+    projectRoot = $projectRoot
+    version = $expectedVersion
 } | ConvertTo-Json | Set-Content -LiteralPath $pidFile -Encoding UTF8
 
 $ready = $false
