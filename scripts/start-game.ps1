@@ -8,6 +8,8 @@ $healthUrl = "http://127.0.0.1:8000/health"
 $pidFile = Join-Path $projectRoot ".runeterra-server.json"
 
 function Find-Python {
+    $projectPython = Join-Path $projectRoot ".venv\Scripts\python.exe"
+    if (Test-Path -LiteralPath $projectPython) { return $projectPython }
     $bundled = Join-Path $env:USERPROFILE ".cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe"
     if (Test-Path -LiteralPath $bundled) { return $bundled }
     foreach ($name in @("python", "python3", "py")) {
@@ -84,12 +86,20 @@ if ($existingHealth) {
 }
 
 $pythonExe = Find-Python
+$previousErrorPreference = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
 & $pythonExe -c "import fastapi, uvicorn" 2>$null
-if ($LASTEXITCODE -ne 0) {
+$dependencyCheckExit = $LASTEXITCODE
+if ($dependencyCheckExit -ne 0) {
     Write-Host "First launch: installing backend dependencies..." -ForegroundColor Yellow
     & $pythonExe -m pip install -r (Join-Path $projectRoot "backend\requirements.txt")
-    if ($LASTEXITCODE -ne 0) { throw "Dependency installation failed. Please check your network." }
+    $dependencyInstallExit = $LASTEXITCODE
+    if ($dependencyInstallExit -ne 0) {
+        $ErrorActionPreference = $previousErrorPreference
+        throw "Dependency installation failed. Please check your network."
+    }
 }
+$ErrorActionPreference = $previousErrorPreference
 
 $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
 $startInfo.FileName = $pythonExe
