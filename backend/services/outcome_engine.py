@@ -76,28 +76,46 @@ class OutcomeEngine:
         errors: list[str] = []
         if not isinstance(proposal, dict):
             return None, {"valid": False, "errors": ["AIResult不是对象"]}
-        required = ("narrative", "factsAdded", "questionsAdded", "questionsResolved", "npcReactions", "continueScene")
+        required = ("narrative", "factsAdded", "questionsAdded", "questionsResolved", "npcReactions", "sceneDecision")
         missing = [key for key in required if key not in proposal]
         if missing:
             errors.append("缺少字段：" + "、".join(missing))
-        for key in ("factsAdded", "questionsAdded", "questionsResolved", "npcReactions"):
+        for key in ("factsAdded", "questionsAdded", "questionsResolved", "npcReactions", "actorsAdded", "objectsAdded"):
             if key in proposal and not isinstance(proposal[key], list):
                 errors.append(f"{key}必须是数组")
         if not isinstance(proposal.get("narrative"), str) or len(proposal.get("narrative", "").strip()) < 40:
             errors.append("narrative过短，未说明具体发生了什么")
-        if not isinstance(proposal.get("continueScene"), bool):
-            errors.append("continueScene必须是布尔值")
+        decision = proposal.get("sceneDecision")
+        if not isinstance(decision, dict):
+            errors.append("sceneDecision必须是对象")
+        else:
+            if not isinstance(decision.get("continueScene"), bool):
+                errors.append("sceneDecision.continueScene必须是布尔值")
+            if not isinstance(decision.get("reason"), str) or not decision.get("reason", "").strip():
+                errors.append("sceneDecision.reason不能为空")
+            if decision.get("continueScene") and not str(decision.get("nextFocus", "")).strip():
+                errors.append("Scene继续时必须给出nextFocus")
         if errors:
             return None, {"valid": False, "errors": errors}
 
         result = copy.deepcopy(proposal)
-        for key in ("factsAdded", "questionsAdded", "questionsResolved", "npcReactions"):
+        for key in ("factsAdded", "questionsAdded", "questionsResolved", "npcReactions", "actorsAdded", "objectsAdded"):
+            result.setdefault(key, [])
             result[key] = list(dict.fromkeys(str(item).strip() for item in result[key] if str(item).strip()))[:8]
         result["narrative"] = result["narrative"].strip()
+        result["sceneDecision"] = {
+            "continueScene": bool(result["sceneDecision"]["continueScene"]),
+            "reason": str(result["sceneDecision"]["reason"]).strip(),
+            "nextFocus": str(result["sceneDecision"].get("nextFocus", "")).strip(),
+        }
+        result["continueScene"] = result["sceneDecision"]["continueScene"]
         current_questions = set(scene.get("questions", []))
         invalid_resolved = [item for item in result["questionsResolved"] if item not in current_questions]
         if invalid_resolved:
             errors.append("questionsResolved包含当前现场不存在的问题")
+        remaining_questions = (current_questions - set(result["questionsResolved"])) | set(result["questionsAdded"])
+        if result["sceneDecision"]["continueScene"] and not remaining_questions:
+            errors.append("Scene继续但没有尚待立即处理的问题")
 
         tier = outcome["code"]
         progress = bool(result["factsAdded"] or result["questionsResolved"])
@@ -110,6 +128,18 @@ class OutcomeEngine:
             errors.append("失败结果不能解决全部核心问题")
 
         serialized = json.dumps(result, ensure_ascii=False)
+        scene_context = json.dumps({
+            "actors": scene.get("actors", []), "objects": scene.get("objects", []),
+            "facts": scene.get("facts", []), "questions": scene.get("questions", []),
+            "action": choice.get("semanticAction", choice.get("text", "")),
+        }, ensure_ascii=False)
+        unrelated_expansions = ("新组织", "陌生组织", "神器", "世界毁灭", "世界危机", "远古魔王")
+        if any(term in serialized and term not in scene_context for term in unrelated_expansions):
+            errors.append("AIResult为延长Scene引入了与当前现场无关的新扩展")
+        if result.get("actorsAdded") and not any(
+            term in f"{scene_context}{serialized}" for term in ("接近", "来者", "脚步", "人影", "呼喊", "在场")
+        ):
+            errors.append("新增现场人物没有来自既有行动或现场变化")
         if re.search(r"(?:线程|Thread).{0,8}(?:阶段|Stage).{0,8}(?:推进|提升|变为|改为)", serialized, re.I):
             errors.append("AIResult试图修改Thread Stage")
         if re.search(r"(?:关系|能力|生命|伤势|紧迫度|认知度).{0,8}[+＋\-－]\s*\d+", serialized):
@@ -158,15 +188,26 @@ class OutcomeEngine:
         scene: dict[str, Any], result: dict[str, Any], choice: dict[str, Any], outcome: dict[str, Any],
         validator: dict[str, Any], *, player_disabled: bool = False,
     ) -> bool:
-        """Apply a validated AIResult and decide whether this local scene remains active."""
+        """Apply AIResult, expire old actions, and honor the per-round natural SceneDecision."""
+        facts_before = list(scene.setdefault("facts", []))
+        questions_before = list(scene.setdefault("questions", []))
+        focus_before = str(scene.get("currentFocus", ""))
+        previous_actions = scene.setdefault("previousActions", [])
+        scene["actions"] = []
         for fact in result["factsAdded"]:
-            if fact not in scene.setdefault("facts", []):
+            if fact not in scene["facts"]:
                 scene["facts"].append(fact)
         resolved = set(result["questionsResolved"])
         scene["questions"] = [item for item in scene.setdefault("questions", []) if item not in resolved]
         for question in result["questionsAdded"]:
             if question not in scene["questions"]:
                 scene["questions"].append(question)
+        for actor in result.get("actorsAdded", []):
+            if actor not in scene.setdefault("actors", []):
+                scene["actors"].append(actor)
+        for obj in result.get("objectsAdded", []):
+            if obj not in scene.setdefault("objects", []):
+                scene["objects"].append(obj)
         current_round = int(scene.get("round", 1))
         scene["lastAction"] = {
             "round": current_round, "id": choice.get("id"), "text": choice.get("semanticAction", choice.get("text")),
@@ -178,10 +219,47 @@ class OutcomeEngine:
             "aiResult": copy.deepcopy(result),
             "validatorResult": copy.deepcopy(validator),
         }
+        previous_semantics = [re.sub(r"[，。！？、：；\s]|继续|再次|重新", "", str(item.get("text", ""))) for item in previous_actions]
+        current_semantic = re.sub(r"[，。！？、：；\s]|继续|再次|重新", "", str(scene["lastAction"]["text"]))
+        repeated_action = any(
+            old and current_semantic and (old == current_semantic or old in current_semantic or current_semantic in old)
+            for old in previous_semantics
+        )
+        previous_actions.append(copy.deepcopy(scene["lastAction"]))
+        scene["previousActions"] = previous_actions[-12:]
+
+        decision = copy.deepcopy(result["sceneDecision"])
+        scene["currentFocus"] = decision.get("nextFocus", "") if decision["continueScene"] else ""
+        normalized_before_focus = re.sub(r"[，。！？、：；\s]", "", focus_before)
+        normalized_after_focus = re.sub(r"[，。！？、：；\s]", "", scene["currentFocus"])
+        focus_same = bool(normalized_before_focus and normalized_before_focus == normalized_after_focus)
+        no_fact_progress = scene["facts"] == facts_before
+        questions_same = scene["questions"] == questions_before
+        stagnant = focus_same and no_fact_progress and questions_same and repeated_action
+        loop_guard = scene.setdefault("loopGuard", {"stagnantRounds": 0, "forcedClosure": False})
+        loop_guard["stagnantRounds"] = int(loop_guard.get("stagnantRounds", 0)) + 1 if stagnant else 0
+        loop_guard["forcedClosure"] = loop_guard["stagnantRounds"] >= 2
+
         leaving = any(term in str(scene["lastAction"]["text"]) for term in ("离开", "撤离", "不介入", "保持距离"))
-        main_resolved = bool(resolved) and not scene["questions"]
+        main_resolved = not scene["questions"]
         at_limit = current_round >= int(scene.get("maxRounds", 4))
-        ended = leaving or player_disabled or main_resolved or at_limit or not result["continueScene"]
+        if loop_guard["forcedClosure"]:
+            decision = {
+                "continueScene": False,
+                "reason": "连续两轮没有新增事实、问题或焦点变化，且行动语义重复；防循环保护要求依据现有事实收束。",
+                "nextFocus": "",
+            }
+            scene["currentFocus"] = ""
+        elif at_limit and decision["continueScene"]:
+            decision = {
+                "continueScene": False,
+                "reason": "达到普通Scene最大安全轮数，依据已有事实强制收束。",
+                "nextFocus": "",
+            }
+            scene["currentFocus"] = ""
+        ended = leaving or player_disabled or main_resolved or at_limit or loop_guard["forcedClosure"] or not decision["continueScene"]
+        scene["sceneDecision"] = decision
+        scene["lastResult"]["sceneDecision"] = copy.deepcopy(decision)
         scene["ended"] = ended
         scene["continueScene"] = not ended
         if not ended:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+from difflib import SequenceMatcher
 import json
 import os
 import re
@@ -254,7 +255,41 @@ class NarrativeAuthorityService:
             tags.insert(0, target)
         return list(dict.fromkeys(tags))
 
-    def map_actions(self, proposals: list[dict[str, Any]], envelope: dict[str, Any], difficulty: int, fallback: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    @staticmethod
+    def _normalized_action(text: Any) -> str:
+        value = re.sub(r"[，。！？、：；\s]", "", str(text or "")).lower()
+        for filler in ("继续", "再次", "再度", "重新", "仍然", "试着", "尝试"):
+            value = value.replace(filler, "")
+        return value
+
+    def _repeats_previous_action(
+        self, proposal: dict[str, Any], previous_actions: list[dict[str, Any]], current_focus: str,
+    ) -> bool:
+        """Minimal semantic guard: same action family, same target and near-identical wording."""
+        if not previous_actions:
+            return False
+        ability, requires_check, _reason = self._map_ability(proposal)
+        action_tags = set(self._action_tags(proposal, ability, requires_check))
+        target = self._normalized_action(proposal.get("target"))
+        semantic = self._normalized_action(proposal.get("semanticAction"))
+        focus = self._normalized_action(current_focus)
+        for previous in previous_actions:
+            previous_tags = set(previous.get("actionTags", []))
+            previous_targets = {self._normalized_action(item) for item in previous.get("targetTags", []) if item}
+            previous_semantic = self._normalized_action(previous.get("text") or previous.get("semanticAction"))
+            same_action = bool(action_tags & previous_tags) or not action_tags or not previous_tags
+            same_target = bool(target and target in previous_targets)
+            close_semantic = SequenceMatcher(None, semantic, previous_semantic).ratio() >= 0.68
+            new_focus_target = bool(focus and focus not in previous_semantic and (focus in semantic or focus in target))
+            if same_action and same_target and close_semantic and not new_focus_target:
+                return True
+        return False
+
+    def map_actions(
+        self, proposals: list[dict[str, Any]], envelope: dict[str, Any], difficulty: int,
+        fallback: list[dict[str, Any]], *, previous_actions: list[dict[str, Any]] | None = None,
+        current_focus: str = "", current_round: int = 1,
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         accepted: list[dict[str, Any]] = []
         rejected: list[dict[str, Any]] = []
         normalized: set[str] = set()
@@ -275,6 +310,9 @@ class NarrativeAuthorityService:
             if reason:
                 rejected.append({"proposal": proposal, "reason": reason})
                 continue
+            if self._repeats_previous_action(proposal, previous_actions or [], current_focus):
+                rejected.append({"proposal": proposal, "reason": "与已经完成的行动在行为、目标和语义上重复"})
+                continue
             ability, requires_check, mapping_reason = self._map_ability(proposal)
             risk = proposal.get("expectedRiskType", "中")
             risk = risk if risk in {"低", "中", "高", "致命"} else "中"
@@ -287,10 +325,10 @@ class NarrativeAuthorityService:
                 "personality": {trait: 1 if not requires_check else 3},
             }
             choice = {
-                "id": f"ai-action-{index}", "semanticAction": semantic, "goal": proposal["goal"], "approach": proposal["approach"],
+                "id": f"scene-action-{current_round}-{index}", "semanticAction": semantic, "goal": proposal["goal"], "approach": proposal["approach"],
                 "requiresCheck": requires_check, "risk": risk, "possibleOutcomeClass": "local_change",
                 "requirements": [],
-                "text": semantic, "hint": f"目标：{proposal['goal']}；代价可能来自{risk}风险", "result": result,
+                "text": semantic, "hint": "", "result": result,
                 "abilityMappingReason": mapping_reason,
                 "actionTags": self._action_tags(proposal, ability, requires_check),
                 "targetTags": self._target_tags(proposal),
@@ -313,40 +351,93 @@ class NarrativeAuthorityService:
         proposals: list[dict[str, Any]] = []
         raw: str | None = None
         remote_valid = False
+        attempts: list[dict[str, Any]] = []
+        previous_actions = copy.deepcopy(scene.get("previousActions", []))
+        current_focus = str(scene.get("currentFocus") or (scene.get("questions") or ["当前变化"])[0])
         if os.getenv("RUNETERRA_DISABLE_REMOTE_AI") != "1" and self.remote.configured:
-            try:
-                response = self.remote.generate(
-                    system=(
-                        "你是互动RPG当前现场的行动导演。根据SceneState提出2到5条此刻真正可做、语义不同的行为。"
-                        "只输出JSON对象，唯一字段为actions。每条只含semanticAction、goal、approach、expectedRiskType、target。"
-                        "不写属性、成功率、奖励、线索、状态或结果。行动必须承接已有facts与尚未解决的questions。"
-                    ),
-                    prompt=json.dumps({
-                        "sceneState": {key: scene.get(key) for key in ("round", "actors", "objects", "facts", "questions", "lastAction", "lastResult")},
-                        "hardFacts": envelope.get("hardFacts", []),
-                        "forbiddenChanges": envelope.get("forbiddenChanges", []),
-                    }, ensure_ascii=False),
-                    temperature=0.72,
-                    max_tokens=650,
-                )
-                raw = response["text"]
-                parsed = self._parse_json(raw)
-                if isinstance(parsed.get("actions"), list):
-                    proposals = parsed["actions"]
-                    remote_valid = len(proposals) >= 2
-            except (DeepSeekError, json.JSONDecodeError, TypeError, KeyError) as exc:
-                raw = str(exc)
-        if len(proposals) < 2:
-            target = (scene.get("objects") or ["现场的关键痕迹"])[0]
+            revision_feedback: list[str] = []
+            for _attempt in range(2):
+                try:
+                    response = self.remote.generate(
+                        system=(
+                            "你是互动RPG当前现场的行动导演。这是一个已经进行中的Scene，世界已因上一轮行动发生变化。"
+                            "根据最新Facts、Questions和Current Focus，只提出2到4条玩家此刻真正可做且决策空间不同的行为。"
+                            "不要重新介绍事件，不要重复Previous Actions；只有新事实赋予同类行为新的明确目标时才可再次使用。"
+                            "行动主要围绕Current Focus。只输出JSON对象，唯一字段为actions；每条只含semanticAction、goal、"
+                            "approach、expectedRiskType、target。不得写属性、成功率、奖励、线索、状态或预定结果。"
+                        ),
+                        prompt=json.dumps({
+                            "sceneState": {key: scene.get(key) for key in ("round", "actors", "objects", "facts", "questions", "lastAction", "lastResult")},
+                            "previousActions": previous_actions,
+                            "currentFocus": current_focus,
+                            "hardFacts": envelope.get("hardFacts", []),
+                            "forbiddenChanges": envelope.get("forbiddenChanges", []),
+                            "revisionFeedback": revision_feedback,
+                        }, ensure_ascii=False),
+                        temperature=0.72,
+                        max_tokens=650,
+                    )
+                    raw = response["text"]
+                    parsed = self._parse_json(raw)
+                    proposals = parsed.get("actions", []) if isinstance(parsed.get("actions"), list) else []
+                    choices, debug = self.map_actions(
+                        proposals, envelope, difficulty, [], previous_actions=previous_actions,
+                        current_focus=current_focus, current_round=int(scene.get("round", 1)),
+                    )
+                    attempts.append({"raw": raw, "rejectedActions": copy.deepcopy(debug["rejectedActions"])})
+                    remote_valid = True
+                    return choices, {
+                        "source": "ai", "rawAIOutput": raw, "attempts": attempts,
+                        "previousActions": previous_actions, "currentFocus": current_focus,
+                        "generatedNextActions": [item["semanticAction"] for item in choices], **debug,
+                    }
+                except (DeepSeekError, json.JSONDecodeError, TypeError, KeyError, ValueError) as exc:
+                    raw = str(exc)
+                    revision_feedback = ["上一批行动重复、缺失或不足两条，请围绕最新Focus彻底重写。", raw]
+                    attempts.append({"raw": raw, "error": str(exc)})
+        # Remote attempts either returned above or failed validation. Always replace
+        # them with focus-aware local actions instead of reusing a rejected batch.
+        if not remote_valid:
             actor = (scene.get("actors") or ["在场的人"])[0]
-            question = (scene.get("questions") or [f"{target}为何出现异常"])[0]
-            proposals = [
-                {"semanticAction": f"继续检查{target}最容易被忽略的部分", "goal": f"回答：{question}", "approach": "核对新旧痕迹", "expectedRiskType": "中", "target": target},
-                {"semanticAction": f"询问{actor}刚才发生的细节", "goal": f"回答：{question}", "approach": "让说法与现场事实互相印证", "expectedRiskType": "低", "target": actor},
-                {"semanticAction": "记住已经确认的事实并离开现场", "goal": "停止承担眼前风险", "approach": "主动结束介入", "expectedRiskType": "低", "target": target},
-            ]
-        choices, debug = self.map_actions(proposals, envelope, difficulty, template.get("choices", []))
-        return choices, {"source": "ai" if remote_valid else "fallback", "rawAIOutput": raw, **debug}
+            if any(term in current_focus for term in ("接近", "来者", "脚步", "现身")):
+                target = "正在靠近的人"
+                proposals = [
+                    {"semanticAction": "藏到遮蔽物后观察来者", "goal": "确认来者身份与意图", "approach": "隐蔽观察", "expectedRiskType": "中", "target": target},
+                    {"semanticAction": "主动出声询问来者身份", "goal": "在对方靠近前表明立场", "approach": "保持退路并沟通", "expectedRiskType": "高", "target": target},
+                    {"semanticAction": f"带{actor}先退到安全位置", "goal": "避开可能发生的正面冲突", "approach": "借地形撤开", "expectedRiskType": "低", "target": actor},
+                    {"semanticAction": "立即退出现场", "goal": "不再承担眼前风险", "approach": "主动结束介入", "expectedRiskType": "低", "target": target},
+                ]
+            elif any(term in current_focus for term in ("脚印", "足迹", "痕迹", "步幅", "来源")):
+                target = "新鲜脚印"
+                proposals = [
+                    {"semanticAction": "沿着新鲜脚印追查它的去向", "goal": "找到留下脚印的人", "approach": "辨认落脚方向并追踪", "expectedRiskType": "中", "target": target},
+                    {"semanticAction": f"询问{actor}是否认得这种步幅", "goal": "确认脚印属于谁", "approach": "把步幅与熟人习惯核对", "expectedRiskType": "低", "target": actor},
+                    {"semanticAction": "检查新旧脚印交叉的位置", "goal": "还原两批人经过的先后", "approach": "比较泥土边缘与覆盖关系", "expectedRiskType": "中", "target": "新旧脚印交叉处"},
+                    {"semanticAction": "记下脚印方向并离开现场", "goal": "停止承担眼前风险", "approach": "主动结束介入", "expectedRiskType": "低", "target": target},
+                ]
+            elif any(term in current_focus for term in ("缝隙", "地下", "裂缝", "冷气")):
+                target = "钟座下方的缝隙"
+                proposals = [
+                    {"semanticAction": "检查缝隙中冷气与回声的方向", "goal": "判断缝隙通向哪里", "approach": "用轻石与声音测试深度", "expectedRiskType": "中", "target": target},
+                    {"semanticAction": f"询问{actor}过去是否见过这道缝隙", "goal": "确认缝隙出现的时间", "approach": "核对寺庙旧事", "expectedRiskType": "低", "target": actor},
+                    {"semanticAction": "退开钟座并结束调查", "goal": "不触动地下未知之物", "approach": "保持距离", "expectedRiskType": "低", "target": target},
+                ]
+            else:
+                target = current_focus
+                proposals = [
+                    {"semanticAction": f"从侧面观察{target}", "goal": f"弄清{target}", "approach": "换一个位置核对细节", "expectedRiskType": "中", "target": target},
+                    {"semanticAction": f"询问{actor}关于{target}的细节", "goal": f"确认{target}", "approach": "核对现场说法", "expectedRiskType": "低", "target": actor},
+                    {"semanticAction": "停止介入并离开现场", "goal": "结束眼前风险", "approach": "保持距离", "expectedRiskType": "低", "target": target},
+                ]
+        choices, debug = self.map_actions(
+            proposals, envelope, difficulty, template.get("choices", []), previous_actions=previous_actions,
+            current_focus=current_focus, current_round=int(scene.get("round", 1)),
+        )
+        return choices, {
+            "source": "ai" if remote_valid else "fallback", "rawAIOutput": raw, "attempts": attempts,
+            "previousActions": previous_actions, "currentFocus": current_focus,
+            "generatedNextActions": [item["semanticAction"] for item in choices], **debug,
+        }
 
     def materialize(self, envelope: dict[str, Any], template: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
         remote_proposal, raw = self._remote_scene(envelope)

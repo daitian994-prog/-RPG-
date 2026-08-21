@@ -462,7 +462,13 @@ class AIService:
             "questionsAdded": ["由结果自然产生的新问题"],
             "questionsResolved": ["从当前questions中被本轮明确回答的问题原文"],
             "npcReactions": ["仅限在场人物的具体反应"],
-            "continueScene": True,
+            "actorsAdded": ["可选；仅限由现场已有行动自然确认的在场普通人物"],
+            "objectsAdded": ["可选；仅限现场已有事物自然暴露的具体物件或痕迹"],
+            "sceneDecision": {
+                "continueScene": True,
+                "reason": "只供Debug：是否仍有必须现在处理且能产生新决策的问题",
+                "nextFocus": "继续时必填；下一轮真正围绕的即时对象或问题",
+            },
             "suggestedClue": {"name": "可选；只有具体发现值得长期保留时提出", "ability": "可选能力", "bonus": 5, "targetTags": [], "actionTags": []},
         }
         try:
@@ -472,9 +478,13 @@ class AIService:
                     "严格输出一个JSON对象，不得输出成功率、掷骰、数值变化、Thread Stage、物品奖励或未授权英雄。"
                     "必须引用SceneState中的具体人物、物件、事实与问题；禁止空泛总结、人生感悟和万能套话。"
                     "questionsResolved只能逐字引用输入中的questions。suggestedClue只是建议，程序有权拒绝。"
+                    "每轮必须返回sceneDecision。不要按轮数决定是否继续；只判断当前是否还有必须现在处理且能产生不同决策的问题。"
+                    "长期线索不必延长Scene；核心问题已解决且没有即时后果时必须结束。继续时nextFocus必须具体。"
+                    "新问题只能来自现场已有的人物、物件、行为、地点或相关World Context的自然后果，不得凭空加入陌生神秘人、组织、神器、敌人、英雄或世界危机。"
+                    "若loopGuard.stagnantRounds已经大于0，除非本轮真实产生新的事实或即时问题，否则必须依据现有事实自然收束，不得再制造扩展问题。"
                 ),
                 prompt=json.dumps({
-                    "sceneState": {key: scene.get(key) for key in ("id", "round", "actors", "objects", "facts", "questions", "lastAction", "lastResult")},
+                    "sceneState": {key: scene.get(key) for key in ("id", "round", "actors", "objects", "facts", "questions", "lastAction", "lastResult", "previousActions", "currentFocus", "loopGuard")},
                     "playerAction": {key: choice.get(key) for key in ("semanticAction", "goal", "approach", "actionTags", "targetTags")},
                     "checkResult": {key: outcome.get(key) for key in ("code", "label", "attribute_label", "risk")},
                     "tierRule": tier_rules[outcome["code"]],
@@ -488,6 +498,8 @@ class AIService:
                     "outputSchema": schema,
                     "location": location["name"],
                     "playerName": game["player"]["name"],
+                    "decisionQuestion": "当前这件事情还有没有一个必须现在处理，并且能够产生新决策的问题？",
+                    "safetyClosureRequested": int(scene.get("round", 1)) >= int(scene.get("maxRounds", 4)),
                 }, ensure_ascii=False),
                 temperature=0.7,
                 max_tokens=900,
@@ -500,7 +512,7 @@ class AIService:
     def fallback_scene_result(
         scene: dict[str, Any], choice: dict[str, Any], outcome: dict[str, Any], location: dict[str, Any],
     ) -> dict[str, Any]:
-        """Concrete, scene-aware offline result; it may continue instead of forcing closure."""
+        """Concrete offline result whose continuation follows the latest scene reality, not a round target."""
         action = choice.get("semanticAction", choice.get("text", "处理现场"))
         goal = choice.get("goal", "弄清眼前的变化")
         target = (choice.get("targetTags") or scene.get("objects") or ["现场的关键处"])[0]
@@ -511,13 +523,42 @@ class AIService:
         questions_added: list[str] = []
         questions_resolved: list[str] = []
         reactions: list[str] = []
+        actors_added: list[str] = []
+        objects_added: list[str] = []
         suggested_clue = None
 
         if leaving:
             narrative = f"你没有再靠近{target}，而是沿{location['name']}的来路退开。{actor}留在原处，现场的声响很快被距离压低；你保留了已经确认的事实，也明确放弃了此刻继续追查的机会。"
-            return {"narrative": narrative, "factsAdded": [], "questionsAdded": [], "questionsResolved": [], "npcReactions": [f"{actor}没有阻拦你离开。"], "continueScene": False, "suggestedClue": None}
+            return {
+                "narrative": narrative, "factsAdded": [], "questionsAdded": [], "questionsResolved": [],
+                "npcReactions": [f"{actor}没有阻拦你离开。"], "actorsAdded": [], "objectsAdded": [],
+                "sceneDecision": {"continueScene": False, "reason": "玩家明确离开现场，当前介入已经结束。", "nextFocus": ""},
+                "continueScene": False, "suggestedClue": None,
+            }
 
-        if "铜钟" in target or "钟座" in target or any("铜钟" in fact for fact in scene.get("facts", [])):
+        current_focus = str(scene.get("currentFocus") or question)
+        simple_resolution = any(term in f"{question}{goal}{target}" for term in ("遗失", "布包", "送还", "倒下的货物"))
+        trace_action = any(term in f"{action}{goal}" for term in ("痕迹", "脚印", "足迹"))
+        approaching_focus = any(term in current_focus for term in ("接近", "来者", "脚步", "现身"))
+        footprint_focus = any(term in current_focus for term in ("新鲜脚印", "足迹", "步幅", "脚印的来源"))
+        gap_focus = any(term in current_focus for term in ("缝隙", "地下", "裂缝", "冷气"))
+
+        if simple_resolution:
+            discovery = f"{actor}认出{target}属于刚刚折返寻找失物的药童，物主与遗失经过已经核实"
+            next_question = ""
+        elif approaching_focus:
+            discovery = "来者只是另一名猎人，他赶来提醒附近山道有危险，并没有追捕在场任何人"
+            next_question = ""
+        elif gap_focus:
+            discovery = "钟座下方的缝隙只通向一条废弃排水槽，冷气来自积水深处，没有东西正在向外逼近"
+            next_question = ""
+        elif footprint_focus:
+            discovery = "新鲜脚印在林缘突然折返，紧接着有一串脚步正沿同一路线向现场靠近"
+            next_question = "正在接近的人是谁？"
+        elif trace_action:
+            discovery = "铜铃附近出现一组新鲜脚印，方向与周围较旧的痕迹相反"
+            next_question = "是谁留下了这组方向相反的新鲜脚印？"
+        elif "铜钟" in target or "钟座" in target or any("铜钟" in fact for fact in scene.get("facts", [])):
             discovery = "铜钟的震动来自钟座下方一道持续渗出冷气的狭窄缝隙"
             next_question = "钟座下方的缝隙通向什么地方？"
         elif any(term in f"{target}{action}{question}" for term in ("脚步", "竹林", "斥候")):
@@ -525,13 +566,18 @@ class AIService:
             next_question = "两名斥候正在沿山道寻找什么？"
         else:
             discovery = f"{target}靠近地面的一侧留着一组新鲜痕迹，方向与周围较旧的痕迹相反"
-            next_question = f"是谁在不久前改变了{target}附近的痕迹？"
+            next_question = "是谁留下了这组方向相反的新鲜脚印？"
 
         code = outcome["code"]
         if code in {"critical", "success", "partial"}:
             facts_added.append(discovery)
             questions_resolved.append(question)
-            questions_added.append(next_question)
+            if next_question:
+                questions_added.append(next_question)
+            if footprint_focus:
+                objects_added.append("从林缘折返的新鲜脚印")
+            if approaching_focus:
+                actors_added.append("赶来的猎人")
             suggested_clue = {
                 "name": f"关于{target}的新发现", "ability": choice.get("attribute", "perception"), "bonus": 5,
                 "targetTags": list(dict.fromkeys(choice.get("targetTags", []) + [target])),
@@ -548,20 +594,35 @@ class AIService:
         elif code == "partial":
             risk = f"{actor}核对时碰落一块碎片，声响惊动了附近尚未现身的人"
             reactions.append(risk)
-            questions_added.append("刚才的声响惊动了谁？")
+            questions_added.append("正在接近的人是谁？")
             narrative = f"你确认了一个足以推进调查的事实：{discovery}。但在{actor}俯身核对时，一块碎片突然落下，清脆的声响传出很远；远处随即出现了短促而急促的脚步回应。"
         else:
-            questions_added.append(next_question)
+            if next_question:
+                questions_added.append(next_question)
             reactions.append(f"{actor}因你的动作后退一步，不再允许任何人继续靠近{target}。")
             narrative = f"你试图通过{action}来{goal}，但{target}表面的新痕被松动的泥水覆盖，最关键的位置没能看清。{actor}被突然的变化惊得后退，现场随即被隔开；原来的问题没有得到答案，继续靠近也比刚才更困难。"
 
-        continue_scene = scene.get("round", 1) < scene.get("maxRounds", 4)
+        if int(scene.get("round", 1)) >= int(scene.get("maxRounds", 4)):
+            continue_scene, reason, next_focus = False, "现场达到安全轮数上限，依据已有事实收束，不再引入扩展问题。", ""
+        elif code == "partial":
+            continue_scene, reason, next_focus = True, "本轮代价制造了正在靠近的即时风险，玩家必须现在作出不同选择。", "正在接近的人"
+        elif code == "failure":
+            continue_scene, reason, next_focus = False, "行动没有推进核心问题，现场也没有形成可供下一轮处理的新决策空间。", ""
+        elif next_question:
+            continue_scene = True
+            reason = "结果自然留下了一个必须在现场立即处理、并能产生新决策的问题。"
+            next_focus = "正在接近的人" if "接近" in next_question else "新鲜脚印的来源" if "脚印" in next_question else "钟座下方的缝隙"
+        else:
+            continue_scene, reason, next_focus = False, "核心问题已经得到解释，当前没有必须立即处理的危险或互动。", ""
         return {
             "narrative": narrative,
             "factsAdded": facts_added,
             "questionsAdded": list(dict.fromkeys(questions_added)),
             "questionsResolved": list(dict.fromkeys(questions_resolved)),
             "npcReactions": reactions,
+            "actorsAdded": actors_added,
+            "objectsAdded": objects_added,
+            "sceneDecision": {"continueScene": continue_scene, "reason": reason, "nextFocus": next_focus},
             "continueScene": continue_scene,
             "suggestedClue": suggested_clue,
         }

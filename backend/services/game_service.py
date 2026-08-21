@@ -274,6 +274,18 @@ class GameService:
             event = pending["template"]
             state["scene"] = self._scene_from_event(event, pending)
             changed = True
+        if isinstance(state.get("scene"), dict):
+            scene = state["scene"]
+            problem = (scene.get("questions") or ["当前变化"])[0]
+            for key, default in {
+                "previousActions": [],
+                "currentFocus": problem,
+                "sceneDecision": {"continueScene": not scene.get("ended", False), "reason": "旧存档迁移后的当前现场仍待处理。", "nextFocus": problem},
+                "loopGuard": {"stagnantRounds": 0, "forcedClosure": False},
+            }.items():
+                if key not in scene:
+                    scene[key] = copy.deepcopy(default)
+                    changed = True
         if self.world_threads.normalize(state):
             changed = True
         if self.director.normalize(state):
@@ -397,6 +409,9 @@ class GameService:
             "id": metadata.get("id", event["id"]), "round": 1,
             "actors": actors, "objects": objects, "facts": facts, "questions": questions,
             "lastAction": None, "lastResult": None, "actions": copy.deepcopy(event.get("choices", [])),
+            "previousActions": [], "currentFocus": questions[0],
+            "sceneDecision": {"continueScene": True, "reason": "初始现场存在一个必须处理的局部问题。", "nextFocus": questions[0]},
+            "loopGuard": {"stagnantRounds": 0, "forcedClosure": False},
             "ended": False, "continueScene": True, "maxRounds": 4,
             "title": event.get("title", "眼前的变化"), "narrative": event.get("text", ""), "type": event.get("type", "探索"),
             "templateId": metadata.get("templateId", event.get("template_id", event["id"])),
@@ -420,9 +435,18 @@ class GameService:
             "eventContext": copy.deepcopy(scene.get("eventContext")), "round": scene["round"],
             "sceneActive": True,
             "sceneDebug": {
-                "sceneId": scene["id"], "round": scene["round"], "facts": scene.get("facts", []),
-                "questions": scene.get("questions", []), "lastAction": scene.get("lastAction"),
-                "lastResult": scene.get("lastResult"), "continueScene": scene.get("continueScene"),
+                "sceneId": scene["id"], "round": scene["round"],
+                "previousActions": scene.get("previousActions", []),
+                "currentFacts": scene.get("facts", []), "currentQuestions": scene.get("questions", []),
+                "actors": scene.get("actors", []), "objects": scene.get("objects", []),
+                "currentFocus": scene.get("currentFocus"), "lastAction": scene.get("lastAction"),
+                "aiResult": (scene.get("lastResult") or {}).get("aiResult"),
+                "sceneDecision": scene.get("sceneDecision"),
+                "continueScene": scene.get("continueScene"),
+                "reason": (scene.get("sceneDecision") or {}).get("reason"),
+                "nextFocus": (scene.get("sceneDecision") or {}).get("nextFocus"),
+                "generatedNextActions": [item.get("semanticAction", item.get("text")) for item in scene.get("actions", [])],
+                "loopGuard": scene.get("loopGuard"),
             },
             "actionDebug": copy.deepcopy(scene.get("actionDebug", {})),
         }

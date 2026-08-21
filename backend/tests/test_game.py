@@ -122,7 +122,7 @@ class GameLoopTest(unittest.TestCase):
         self.assertTrue(game["player"]["inventory"][0]["description"])
         self.assertNotIn("bonuses", game["player"]["inventory"][0])
         self.assertIn("effects", game["player"]["inventory"][0])
-        self.assertEqual(game["gameVersion"], "0.4.1")
+        self.assertEqual(game["gameVersion"], "0.4.2")
 
     def test_world_thread_intervention_costs_time_and_persists(self):
         game = self.service.new_game(["peace", "power", "freedom", "spirit", "destiny", "peace"])
@@ -382,6 +382,65 @@ class GameLoopTest(unittest.TestCase):
         self.assertIn("震动来自钟座下方", " ".join(resolution["aiResult"]["factsAdded"]))
         self.assertEqual(resolution["nextEvent"]["round"], 2)
         self.assertIn("震动来自钟座下方", " ".join(game["scene"]["facts"]))
+
+    def test_three_round_trace_scene_regenerates_actions_and_changes_focus(self):
+        from backend.database.db import save_game
+
+        game = self.service.new_game(["peace"] * 6)
+        event = {
+            "id": "unignorable-traces", "dynamic": True, "type": "探索", "title": "无法忽略的痕迹",
+            "text": "黑藤缠绕着一只旧铜铃，附近泥地留有方向混乱的旧痕迹。",
+            "event_seed": "trace-loop", "director": {"intensity": "medium"},
+            "eventContext": {"hardFacts": ["黑藤缠绕铜铃", "附近存在旧痕迹"], "forbiddenChanges": []},
+            "sceneProposal": {
+                "localActors": ["老猎人"], "localObjects": ["铜铃", "旧痕迹"],
+                "immediateProblem": "这里最近发生了什么？",
+                "playerObservableFacts": ["黑藤缠绕铜铃", "附近存在旧痕迹"],
+            },
+            "choices": [{
+                "id": "inspect-traces", "text": "检查铜铃附近痕迹", "semanticAction": "检查铜铃附近痕迹",
+                "goal": "还原最近发生的事", "approach": "比较新旧痕迹", "attribute": "perception",
+                "difficulty": 8, "automatic": "success", "requiresCheck": True, "risk": "中",
+                "actionTags": ["investigate"], "targetTags": ["铜铃", "旧痕迹"],
+                "result": {"text": "检查痕迹。", "personality": {"spirit": 1}},
+            }],
+        }
+        game["location"] = "windbreak"
+        game["scene"] = self.service._scene_from_event(event, {
+            "id": event["id"], "templateId": event["id"], "eventSeed": event["event_seed"],
+            "director": event["director"], "eventContext": event["eventContext"],
+        })
+        save_game(game["id"], game)
+
+        with patch.dict("os.environ", {"RUNETERRA_DISABLE_REMOTE_AI": "1"}, clear=False):
+            game, round_one = self.service.resolve(game["id"], event["id"], 0, 1)
+            self.assertFalse(round_one["sceneEnded"])
+            self.assertEqual(game["scene"]["currentFocus"], "新鲜脚印的来源")
+            round_two_event = round_one["nextEvent"]
+            round_two_texts = [item["text"] for item in round_two_event["choices"]]
+            self.assertIn("沿着新鲜脚印追查它的去向", round_two_texts)
+            self.assertNotIn("检查铜铃附近痕迹", round_two_texts)
+
+            follow_index = round_two_texts.index("沿着新鲜脚印追查它的去向")
+            game["scene"]["actions"][follow_index]["automatic"] = "success"
+            save_game(game["id"], game)
+            game, round_two = self.service.resolve(game["id"], event["id"], follow_index, 2)
+            self.assertFalse(round_two["sceneEnded"])
+            self.assertEqual(game["scene"]["currentFocus"], "正在接近的人")
+            round_three_event = round_two["nextEvent"]
+            round_three_texts = [item["text"] for item in round_three_event["choices"]]
+            self.assertTrue(any("来者" in text for text in round_three_texts))
+            self.assertTrue(all("铜铃" not in text for text in round_three_texts))
+
+            observe_index = next(i for i, text in enumerate(round_three_texts) if "观察来者" in text)
+            game["scene"]["actions"][observe_index]["automatic"] = "success"
+            save_game(game["id"], game)
+            game, round_three = self.service.resolve(game["id"], event["id"], observe_index, 3)
+
+        self.assertTrue(round_three["sceneEnded"])
+        self.assertEqual(game["scene"]["lastResult"]["round"], 3)
+        self.assertFalse(game["scene"]["sceneDecision"]["continueScene"])
+        self.assertIn("没有必须立即处理", game["scene"]["sceneDecision"]["reason"])
 
     def test_leaving_can_end_a_scene_in_one_round(self):
         from backend.database.db import save_game

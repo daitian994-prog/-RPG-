@@ -76,6 +76,7 @@ class ClosedLoopTest(unittest.TestCase):
             "narrative": "你在钟座下方找到一道持续渗出冷气的裂隙，寺庙老人俯身确认后，第一次说出昨夜也听见过地下回声。",
             "factsAdded": ["铜钟的震动来自钟座下方的裂隙"], "questionsAdded": ["裂隙通向哪里？"],
             "questionsResolved": ["铜钟为什么震动？"], "npcReactions": ["寺庙老人确认昨夜听见地下回声"],
+            "sceneDecision": {"continueScene": True, "reason": "地下裂隙仍在现场形成一个必须立即判断的问题。", "nextFocus": "钟座下方的裂隙"},
             "continueScene": True, "suggestedClue": None,
         }
         accepted, debug = self.outcomes.validate_ai_result(valid, scene, outcome, choice, {"threadId": "spirit_anomaly"}, self.state)

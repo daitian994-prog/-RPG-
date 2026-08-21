@@ -126,6 +126,41 @@ class NarrativeAuthorityTest(unittest.TestCase):
         self.assertGreaterEqual(len("".join(event["text"].split())), 220)
         self.assertEqual(event["choices"][0]["semanticAction"], "检查木箱上的陌生划痕")
 
+    def test_next_round_fallback_uses_latest_focus_and_not_old_action(self):
+        class OfflineAI:
+            configured = False
+
+        service = NarrativeAuthorityService(OfflineAI())
+        scene = {
+            "round": 2, "actors": ["老猎人"], "objects": ["铜铃", "新鲜脚印"],
+            "facts": ["出现一组方向相反的新鲜脚印"], "questions": ["是谁留下了这组新鲜脚印？"],
+            "currentFocus": "新鲜脚印的来源",
+            "previousActions": [{"text": "检查铜铃附近痕迹", "actionTags": ["investigate"], "targetTags": ["铜铃"]}],
+            "lastAction": {"text": "检查铜铃附近痕迹"}, "lastResult": {"checkResult": {"code": "success"}},
+        }
+        actions, debug = service.next_actions(scene, self.envelope, self.template, 8)
+        texts = [item["text"] for item in actions]
+        self.assertIn("沿着新鲜脚印追查它的去向", texts)
+        self.assertNotIn("检查铜铃附近痕迹", texts)
+        self.assertEqual(debug["currentFocus"], "新鲜脚印的来源")
+        self.assertEqual(debug["previousActions"][0]["text"], "检查铜铃附近痕迹")
+        self.assertTrue(all(not item["hint"] for item in actions))
+
+    def test_action_guard_rejects_same_action_tag_target_and_meaning(self):
+        service = NarrativeAuthorityService(FakeSceneAI())
+        proposals = [
+            {"semanticAction": "再次检查铜钟", "goal": "确认震动", "approach": "观察", "expectedRiskType": "中", "target": "铜钟"},
+            {"semanticAction": "询问寺庙老人是否听过回声", "goal": "确认昨夜经过", "approach": "沟通", "expectedRiskType": "低", "target": "寺庙老人"},
+            {"semanticAction": "离开铜钟所在的回廊", "goal": "结束风险", "approach": "保持距离", "expectedRiskType": "低", "target": "回廊"},
+        ]
+        actions, debug = service.map_actions(
+            proposals, self.envelope, 8, [],
+            previous_actions=[{"text": "检查铜钟", "actionTags": ["investigate"], "targetTags": ["铜钟"]}],
+            current_focus="地下回声", current_round=2,
+        )
+        self.assertNotIn("再次检查铜钟", [item["text"] for item in actions])
+        self.assertTrue(any("重复" in item["reason"] for item in debug["rejectedActions"]))
+
 
 if __name__ == "__main__":
     unittest.main()
