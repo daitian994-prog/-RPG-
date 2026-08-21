@@ -1,14 +1,12 @@
-import { useState } from 'react'
-import { ChevronRight, CircleUserRound, Compass, Leaf, LockKeyhole, MapPin, Minus, Plus, Scroll, Shield, Sparkles, Sword, X } from 'lucide-react'
+import { ChevronRight, CircleUserRound, Compass, LockKeyhole, Scroll, Shield, Sparkles, Sword, X } from 'lucide-react'
 import BottomNav from '../components/BottomNav'
 import PlayerHeader from '../components/PlayerHeader'
+import LocationSelectionPage from './LocationSelectionPage'
 import { debugMode } from '../debugMode'
-import terrainMapUrl from '../../../backend/admin/assets/official/ionia/runeterra-terrain.jpg'
 
 const coreAttributeNames = {martial:'武艺',physique:'体魄',perception:'灵觉',willpower:'心志',agility:'机敏',social:'交涉'}
 const personalityNames = {peace:'和平倾向',power:'力量观',freedom:'自由倾向',spirit:'灵性亲和',destiny:'命运态度'}
 const fateNames = {guardian:'守护命运',strong:'强者命运',wanderer:'流浪命运',spirit:'灵界命运',breaker:'破局命运'}
-const locationIcons = { village: Leaf, forest: Compass, ruins: Sword, temple: Sparkles }
 
 export default function GamePage({ game, world, event, result, tab, busy, eventState, onTab, onTravel, onRecover, onInterveneThread, onFocusWorldTopic, onChoice, onDialogue, onCloseEvent, onRestart }) {
   const location = world.locations.find(x => x.id === game.location)
@@ -17,7 +15,7 @@ export default function GamePage({ game, world, event, result, tab, busy, eventS
     <PlayerHeader game={game} location={location}/>
     <section className="game-content">
       {tab === 'story' && <Story game={game} location={location} result={result} npcs={world.npcs} onMap={() => onTab('map')} onRestart={onRestart}/>}
-      {tab === 'map' && <WorldMap locations={world.locations} mapPlaces={world.map_places || []} journal={game.journal || []} current={game.location} points={game.action_points} time={game.time} chapterComplete={game.chapter_complete} chapterPhase={game.chapter_phase} bodyCondition={game.player.bodyCondition} busy={busy} onTravel={onTravel} onRecover={onRecover}/>}
+      {tab === 'map' && <LocationSelectionPage locations={world.locations} journal={game.journal || []} current={game.location} points={game.action_points} time={game.time} chapterComplete={game.chapter_complete} bodyCondition={game.player.bodyCondition} busy={busy} onTravel={onTravel} onRecover={onRecover}/>}
       {tab === 'people' && <People npcs={localNpcs} relationships={game.relationships} onDialogue={onDialogue}/>} 
       {tab === 'status' && <Status
         player={game.player} game={game} busy={busy}
@@ -78,49 +76,6 @@ function ResolutionPanel({ resolution, npcs }) {
     {resolution.mapUpdates?.length > 0 && <div className="world-response map-change"><span>新的方向</span>{resolution.mapUpdates.map(item=><div key={item.id}><b>{item.title}</b><p>{item.summary}</p><em>相关地点出现新的可追踪事项</em></div>)}</div>}
     {debugMode && resolution.worldFeedback?.thread && <div className="world-feedback"><span>开发信息</span><pre>{JSON.stringify(resolution.worldFeedback, null, 2)}</pre></div>}
   </section>
-}
-
-const pallasLocalPositions = {
-  pallas: [50, 50],
-  windbreak: [29, 27],
-  war_ruins: [25, 72],
-  mountain_temple: [76, 27],
-}
-
-function WorldMap({ locations, mapPlaces, journal, current, points, time, chapterComplete, chapterPhase, bodyCondition, busy, onTravel, onRecover }) {
-  const [mapLevel, setMapLevel] = useState('ionia')
-  const remaining = Math.max(0, time.chapter_limit - time.total_actions)
-  const overviewPlaces = mapPlaces.filter(place => place.id !== 'ionian_archipelago')
-  const openPallas = () => setMapLevel('pallas')
-  const inFinale = !chapterComplete && time.total_actions >= 12
-  const finaleNext = {12:['mountain_temple','终章一 · 前往山寺平息灵界异象'],13:['war_ruins','终章二 · 赴战争遗迹与亚索会合'],14:['pallas','终章三 · 返回帕拉斯布置防线'],15:['pallas','终章四 · 迎战血旗督军']}[time.total_actions]
-  const leadsFor = locationId => journal.filter(item => item.trackable && item.status !== 'closed' && item.relatedLocations?.includes(locationId))
-  const handleLocalKey = (event, locationId) => {
-    if (event.key !== 'Enter' && event.key !== ' ') return
-    event.preventDefault()
-    if (!busy && locationId !== current) onTravel(locationId)
-  }
-  return <div className="map-view">
-    <div className="section-heading"><p>艾欧尼亚 · 东部</p><h3>{inFinale ? '第一章终章' : '选择去处'}</h3><span>{chapterComplete ? '试玩已经结束' : inFinale ? '最后四幕将依次推进' : `${points} 次行动可用${points === 0 ? ' · 下一次行动进入新季节' : ''}`}</span><div className="chapter-countdown"><i><span style={{width:`${Math.min(100,time.total_actions / time.chapter_limit * 100)}%`}}/></i><b>{chapterComplete ? '第一章已经结束' : `一年之期 · 还剩 ${remaining} 次行动`}</b></div></div>
-    {inFinale && finaleNext && <section className="finale-next"><span>固定终章 · {time.total_actions - 11} / 4</span><b>{finaleNext[1]}</b><p>终章已经开始，调查、休息和自由旅行暂时关闭。完成这一幕后才会进入下一段收尾。</p><button disabled={busy} onClick={()=>onTravel(finaleNext[0])}>继续终章</button></section>}
-    <div className={`map-canvas map-level-${mapLevel}`}>
-      <div className="map-window-label"><b>{mapLevel === 'ionia' ? '艾欧尼亚大陆' : '帕拉斯地区'}</b><span>{mapLevel === 'ionia' ? '灰色地点暂未开放' : '四个章节探索地点'}</span></div>
-      <div className="map-zoom-controls" aria-label="地图窗口缩放"><button disabled={mapLevel === 'ionia'} onClick={() => setMapLevel('ionia')} aria-label="缩小至艾欧尼亚全境"><Minus size={13}/>全境</button><button disabled={mapLevel === 'pallas'} onClick={openPallas} aria-label="放大至帕拉斯地区"><Plus size={13}/>帕拉斯</button></div>
-      {mapLevel === 'ionia' ? <svg className="official-game-map overview-map" viewBox="1180 480 760 700" preserveAspectRatio="xMidYMid meet" role="img" aria-label="艾欧尼亚大陆与数据库地点">
-        <image href={terrainMapUrl} x="0" y="0" width="2048" height="2048"/>
-        <text className="ionia-continent-label" x="1535" y="645">艾欧尼亚大陆</text>
-        {overviewPlaces.map(place => { const p=place.map_position; const isPallas=place.id==='pallas'; const estimated=p.mode==='estimated_area'; return <g key={place.id} className={`world-map-pin ${isPallas?'pallas-open':'locked'} ${estimated?'estimated':''}`} transform={`translate(${p.x} ${p.y})`} role={isPallas?'button':'img'} tabIndex={isPallas?0:undefined} aria-label={isPallas?'帕拉斯，点击放大':'暂未开放，'+place.name} onClick={isPallas?openPallas:undefined} onKeyDown={isPallas ? event => { if(event.key==='Enter'||event.key===' '){event.preventDefault();openPallas()} } : undefined}>{estimated && <circle className="estimate-range" r={p.radius || 45}/>}<circle className="anchor" r={isPallas?10:7}/><text y="24">{place.name}</text>{isPallas && <text className="pin-status" y="41">点击进入</text>}</g> })}
-      </svg> : <svg className="official-game-map pallas-detail-map" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice" role="img" aria-label="帕拉斯的四个章节地点">
-        <image href={terrainMapUrl} x="0" y="0" width="100" height="100" preserveAspectRatio="xMidYMid slice"/>
-        <path className="local-route" d="M50 50 L29 27 M50 50 L25 72 M50 50 L76 27"/>
-        {locations.map(loc => { const [x,y]=pallasLocalPositions[loc.id]; const active=loc.id===current; const isPallas=loc.id==='pallas'; const fresh=leadsFor(loc.id).some(item=>item.isNew); return <g key={loc.id} className={`local-map-pin ${active?'current':''} ${isPallas?'hub':''} ${fresh?'has-new':''}`} transform={`translate(${x} ${y})`} role="button" tabIndex="0" aria-label={`${loc.name}${active?'，当前位置':'，前往需要一次行动'}`} onClick={() => !busy && !active && onTravel(loc.id)} onKeyDown={event => handleLocalKey(event,loc.id)}><circle r={isPallas?4:3}/><text y="8">{loc.name}</text><text className="pin-status" y="13">{fresh?'NEW · 有新方向':active?'当前位置':isPallas?'返回 · 1':'前往 · 1'}</text></g> })}
-      </svg>}
-      <div className="map-wash wash-a"/><div className="map-wash wash-b"/>
-    </div>
-    <div className="map-note"><span><MapPin size={14}/>{mapLevel === 'ionia' ? '点击帕拉斯，在地图窗口内放大' : '使用窗口右上角按钮返回全境'}</span></div>
-    {!inFinale && current === 'pallas' && <section className="recovery-card"><div><span>安全地点 · 稳定恢复</span><b>在帕拉斯休息</b><p>解除疲惫和紧张，使伤势改善一级。消耗 1 次行动，时间成本 1。</p></div><button disabled={busy || points <= 0 || bodyCondition?.state === 'healthy'} onClick={onRecover}>休息 / 治疗</button></section>}
-    {!inFinale && <section className="travel-list"><header><div><span>周边行程</span><b>选择你为什么前往</b></div><small>地点有稳定倾向，具体现场仍会动态发生</small></header>{locations.map(loc => { const Icon=locationIcons[loc.icon]; const active=loc.id===current; const leads=leadsFor(loc.id); return <article className={`travel-card ${active?'current':''}`} key={loc.id}><div className="location-personality"><i><Icon size={17}/></i><div><header><b>{loc.name}</b><em>风险 · {loc.risk}</em></header><strong>{loc.playstyle}</strong><p>{loc.expectation}</p><small>更可能获得：{loc.feedbackTypes?.join(' / ')}</small></div></div><div className="location-leads">{leads.length ? leads.map(lead=><button disabled={busy||chapterComplete} key={lead.id} onClick={()=>onTravel(loc.id,lead.id)}><span>{lead.isNew?'NEW · 当前可追踪':'继续追踪'}</span><b>{lead.title}</b><small>{lead.summary}</small></button>) : <p>目前没有明确线索，你仍然可以自由探索。</p>}</div><button className="free-explore" disabled={busy||chapterComplete||active} onClick={()=>onTravel(loc.id,null)}>{active?'当前位置':'自由探索 · 1 次行动'}</button></article> })}</section>}
-  </div>
 }
 
 function People({ npcs, relationships, onDialogue }) {
