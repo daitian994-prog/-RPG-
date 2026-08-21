@@ -3,10 +3,15 @@ import BottomNav from '../components/BottomNav'
 import PlayerHeader from '../components/PlayerHeader'
 import LocationSelectionPage from './LocationSelectionPage'
 import { debugMode } from '../debugMode'
+import pallasImage from '../assets/locations/pallas.png'
+import windbreakImage from '../assets/locations/windbreak-forest.png'
+import warRuinsImage from '../assets/locations/war-ruins.png'
+import mountainTempleImage from '../assets/locations/mountain-temple.png'
 
 const coreAttributeNames = {martial:'武艺',physique:'体魄',perception:'灵觉',willpower:'心志',agility:'机敏',social:'交涉'}
 const personalityNames = {peace:'和平倾向',power:'力量观',freedom:'自由倾向',spirit:'灵性亲和',destiny:'命运态度'}
 const fateNames = {guardian:'守护命运',strong:'强者命运',wanderer:'流浪命运',spirit:'灵界命运',breaker:'破局命运'}
+const locationImages = {pallas:pallasImage,windbreak:windbreakImage,war_ruins:warRuinsImage,mountain_temple:mountainTempleImage}
 
 export default function GamePage({ game, world, event, result, tab, busy, eventState, onTab, onTravel, onRecover, onInterveneThread, onFocusWorldTopic, onChoice, onDialogue, onCloseEvent, onRestart }) {
   const location = world.locations.find(x => x.id === game.location)
@@ -30,10 +35,14 @@ export default function GamePage({ game, world, event, result, tab, busy, eventS
 function Story({ game, location, result, npcs, onMap, onRestart }) {
   const resolution = result && typeof result === 'object' ? result : game.last_resolution
   const latest = resolution?.narrative || result || game.log.at(-1)
+  const chapterLabel = game.chapter_complete ? '第一章 · 完' : `第一章 · ${game.time.total_actions} / ${game.time.chapter_limit}`
+  const chapterTitle = game.chapter_complete ? '血旗落下之后' : '风从帕拉斯吹来'
   return <div className="story-view">
-    <div className="scene-art"><div className="scene-moon"/><div className="scene-ridge"/><span>{location.subtitle}</span></div>
-    <div className="chapter-title"><span>{game.chapter_complete ? '第一章 · 完' : `第一章 · ${game.time.total_actions} / ${game.time.chapter_limit}`}</span><h3>{game.chapter_complete ? '血旗落下之后' : '风从帕拉斯吹来'}</h3></div>
-    <article><Scroll size={18}/><div className="narrative-copy">{String(latest).split('\n\n').map((p,i) => <p key={i}>{p}</p>)}</div></article>
+    <section className="journal-cover" style={{backgroundImage:`linear-gradient(180deg,rgba(7,17,14,.08),rgba(7,17,14,.96)),url(${locationImages[location.id] || pallasImage})`}}>
+      <span>{chapterLabel}</span><h3>{chapterTitle}</h3><p>{location.name} · {location.subtitle}</p>
+    </section>
+    <section className="journal-heading"><div><span>旅记</span><h2>风中留下的这一页</h2><p>你亲历的选择、余波与仍在等待回答的事情。</p></div><Scroll size={24}/></section>
+    <article className="journal-narrative"><header><span>最近记录</span><b>{resolution?.event_title || location.name}</b></header><div className="narrative-copy">{String(latest).split('\n\n').map((p,i) => <p key={i}>{p}</p>)}</div></article>
     <WorldSignals signals={game.latestWorldSignals || []}/>
     {resolution && <ResolutionPanel resolution={resolution} npcs={npcs}/>} 
     {game.demo_complete ? <DemoEnding summary={game.chapter_summary} onRestart={onRestart}/> : game.battle_complete && <div className="milestone"><Shield size={18}/><div><b>旅途印记 · 初战</b><span>你已经历一次真正的战斗。故事仍在继续。</span></div></div>}
@@ -138,16 +147,16 @@ function EventSheet({ event, busy, eventState, onChoice, onClose }) {
   const Icon = typeIcon
   const intensityLabel = {low:'低张力',medium:'中张力',high:'高张力',climax:'高潮'}
   return <div className="sheet-backdrop"><section className={`event-sheet ${event.type === '战斗' ? 'battle' : ''}`}>
-    <div className="sheet-handle"/>{!event.sceneActive && !event.finale_stage && !event.chapter_finale && <button className="sheet-close" onClick={onClose}><X size={18}/></button>}
-    <span className="event-type"><Icon size={15}/>{event.type}事件{event.round ? ` · 第 ${event.round} 轮` : ''}</span><h2>{event.title}</h2>
+    <div className="sheet-handle"/>{!event.sceneActive && !event.finale_stage && !event.chapter_finale && <button className="sheet-close" onClick={onClose} aria-label="关闭事件"><X size={18}/></button>}
+    <header className="event-heading"><span className="event-type"><Icon size={15}/>{event.type}事件{event.round ? ` · 第 ${event.round} 轮` : ''}</span><h2>{event.title}</h2><i/></header>
     {debugMode && event.director && <div className="director-badge"><span>事件编排 · {event.director.categoryLabel}</span><b>{event.director.intentLabel} · {intensityLabel[event.director.intensity] || event.director.intensity}</b></div>}
     {debugMode && event.actionDebug && <details className="dynamic-components"><summary>行动候选信息</summary><pre>{JSON.stringify(event.actionDebug, null, 2)}</pre></details>}
     {debugMode && event.narrativeAuthorityDebug && <details className="dynamic-components"><summary>叙事信封、AI提案与拒绝记录</summary><pre>{JSON.stringify(event.narrativeAuthorityDebug, null, 2)}</pre></details>}
     {debugMode && event.sceneDebug && <details className="dynamic-components"><summary>SceneState · 当前现场</summary><pre>{JSON.stringify(event.sceneDebug, null, 2)}</pre></details>}
     {event.boss && <div className="boss-card"><span>{event.boss.title}</span><h3>{event.boss.name}</h3><p>{event.boss.description}</p><div><b>威胁 · 致命</b><b>终章 · 第 4 幕</b></div></div>}
-    <div className={`event-copy ${event.streaming ? 'is-streaming' : ''}`} aria-live="polite">{(event.paragraphs?.length ? event.paragraphs : event.text ? event.text.split('\n\n') : []).map((p,i) => <p className="stream-paragraph" key={`${i}-${p.slice(0,12)}`}>{p}</p>)}{!event.text && <div className="world-whisper"><i/><span>{event.type === '战斗' ? '敌人正在逼近。你调整呼吸，四周逐渐安静下来。' : '风从近处掠过。某种变化正在显露轮廓。'}</span></div>}</div>
+    <div className={`event-copy ${event.streaming ? 'is-streaming' : ''}`} aria-live="polite"><span className="event-copy-label">眼前发生</span>{(event.paragraphs?.length ? event.paragraphs : event.text ? event.text.split('\n\n') : []).map((p,i) => <p className="stream-paragraph" key={`${i}-${p.slice(0,12)}`}>{p}</p>)}{!event.text && <div className="world-whisper"><i/><span>{event.type === '战斗' ? '敌人正在逼近。你调整呼吸，四周逐渐安静下来。' : '风从近处掠过。某种变化正在显露轮廓。'}</span></div>}</div>
     {event.type === '战斗' && <div className="battle-warning"><Sword size={17}/><span>{event.chapter_finale ? '这是第一章终章的最后一次关键检定；本次选择决定帕拉斯的结局。' : '战斗会随现场结果自然继续或结束；本次选择决定眼前局势。'}</span></div>}
-    <div className={`event-choices ${eventState === 'CHOICES_AVAILABLE' ? 'available' : ''}`}>{event.choices.map((choice, index) => { const noCheck=choice.assessment?.requires_check === false || choice.requiresCheck === false; return <button style={{animationDelay:`${index * .08}s`}} disabled={busy || eventState !== 'CHOICES_AVAILABLE'} onClick={() => onChoice(index)} key={choice.text}><span>{String.fromCharCode(65+index)}</span><div className="choice-copy"><b>{choice.text}</b>{choice.hint && <small>{choice.hint}</small>}<div className="choice-assessment"><em className={`risk-${choice.assessment?.risk || choice.risk}`}>风险 · {choice.assessment?.risk || choice.risk}</em><em>{noCheck ? '无需检定 · 结果明确' : `${choice.assessment.attribute_label} · 成功率 ${choice.assessment.final_probability}%`}</em>{choice.lethal && <em className="risk-致命">失败后果 · 可能死亡</em>}{choice.assessment?.applied_modifiers?.map((modifier,i)=><em key={i}>{modifier.label} {modifier.value>=0?'+':''}{modifier.value}{modifier.mode==='percent'?'%':''}</em>)}</div></div><ChevronRight size={18}/></button> })}</div>
+    <section className="choice-section"><header><span>你的选择</span><i/><small>每一步都会改变现场</small></header><div className={`event-choices ${eventState === 'CHOICES_AVAILABLE' ? 'available' : ''}`}>{event.choices.map((choice, index) => { const noCheck=choice.assessment?.requires_check === false || choice.requiresCheck === false; return <button style={{animationDelay:`${index * .08}s`}} disabled={busy || eventState !== 'CHOICES_AVAILABLE'} onClick={() => onChoice(index)} key={choice.text}><span>{String.fromCharCode(65+index)}</span><div className="choice-copy"><b>{choice.text}</b>{choice.hint && <small>{choice.hint}</small>}<div className="choice-assessment"><em className={`risk-${choice.assessment?.risk || choice.risk}`}>风险 · {choice.assessment?.risk || choice.risk}</em><em>{noCheck ? '无需检定 · 结果明确' : `${choice.assessment.attribute_label} · 成功率 ${choice.assessment.final_probability}%`}</em>{choice.lethal && <em className="risk-致命">失败后果 · 可能死亡</em>}{choice.assessment?.applied_modifiers?.map((modifier,i)=><em key={i}>{modifier.label} {modifier.value>=0?'+':''}{modifier.value}{modifier.mode==='percent'?'%':''}</em>)}</div></div><ChevronRight size={18}/></button> })}</div></section>
     <p className="fate-note"><LockKeyhole size={12}/>{event.sceneActive ? '每次选择都会产生具体后果；若问题尚未解决，现场将继续' : '选择后将显示这次行动造成的变化'}</p>
   </section></div>
 }
