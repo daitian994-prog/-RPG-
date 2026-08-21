@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronUp, Compass, Footprints, Leaf, MapPin, Sparkles, Sword } from 'lucide-react'
-import pallasImage from '../../../backend/admin/assets/official/ionia/village-market.jpg'
-import windbreakImage from '../../../backend/admin/assets/official/ionia/forest-market.jpg'
-import warRuinsImage from '../../../backend/admin/assets/official/ionia/great-stand.jpg'
-import templeImage from '../../../backend/admin/assets/official/ionia/great-monasteries.jpg'
+import pallasImage from '../assets/locations/pallas.png'
+import windbreakImage from '../assets/locations/windbreak-forest.png'
+import warRuinsImage from '../assets/locations/war-ruins.png'
+import templeImage from '../assets/locations/mountain-temple.png'
 import './LocationSelectionPage.css'
 
 const locationImages = { pallas: pallasImage, windbreak: windbreakImage, war_ruins: warRuinsImage, mountain_temple: templeImage }
