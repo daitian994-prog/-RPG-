@@ -2,6 +2,7 @@ import json
 import copy
 import math
 import random
+import re
 import uuid
 import hashlib
 from pathlib import Path
@@ -144,7 +145,7 @@ class GameService:
         item = self.item_catalog.get(name)
         if item:
             return {**item, "effects": list(item.get("effects", [])), "check_bonuses": dict(item.get("check_bonuses", {}))}
-        return {"name": name, "rarity": "未知", "description": "这件物品的来历尚未被记录。", "effects": [], "check_bonuses": {}}
+        return {"name": name, "rarity": "未知", "description": "这件物品的来历尚未被记录。", "effects": [], "check_bonuses": {}, "actionTags": [], "targetTags": []}
 
     def _apply_item_bonuses(self, player: dict[str, Any], item: dict[str, Any]) -> tuple[dict[str, int], dict[str, int]]:
         return {}, {}
@@ -187,6 +188,22 @@ class GameService:
         if "clues" not in player:
             player["clues"] = []
             changed = True
+        for clue in player.get("clues", []):
+            inferred_target = ""
+            match = re.search(r"关于(.+?)的(?:可靠线索|新发现)", clue.get("name", ""))
+            if match:
+                inferred_target = match.group(1)
+            defaults = {
+                "id": "clue-" + hashlib.sha256(clue.get("name", "未命名线索").encode()).hexdigest()[:12],
+                "ability": next(iter(clue.get("modifiers", {})), None),
+                "bonus": next(iter(clue.get("modifiers", {}).values()), 0),
+                "threadId": None, "targetTags": [inferred_target] if inferred_target else [],
+                "actionTags": [], "locationTags": [], "factionTags": [],
+            }
+            for key, value in defaults.items():
+                if key not in clue:
+                    clue[key] = value
+                    changed = True
         if "traits" not in player:
             player["traits"] = [{"id": "nameless", "name": "无名者", "level": 1, "source": "角色背景", "classification": "identity", "usableInEvents": False, "modifiers": {}}]
             changed = True
@@ -248,6 +265,14 @@ class GameService:
         if pending.get("templateId", "").startswith("e") and pending.get("templateId", "")[1:].isdigit():
             state.pop("pendingEvent", None)
             state.setdefault("log", []).append("旧版固定事件已经退出事件池；下一次旅行会根据当前世界状态生成新的现场。")
+            changed = True
+        if "scene" not in state:
+            state["scene"] = None
+            changed = True
+        if state.get("scene") is None and state.get("pendingEvent", {}).get("template", {}).get("dynamic"):
+            pending = state.pop("pendingEvent")
+            event = pending["template"]
+            state["scene"] = self._scene_from_event(event, pending)
             changed = True
         if self.world_threads.normalize(state):
             changed = True
@@ -325,6 +350,7 @@ class GameService:
             "stateChangeLog": [],
             "aiNarratorDebug": {"source": "none", "validation": {"valid": True, "errors": []}},
             "narrativeAuthorityDebug": {},
+            "scene": None,
         }
         self._sync_character_layers(state)
         self.outcomes.record(state, "new_game", self.outcomes.snapshot(state), metadata={"version": PROJECT_VERSION})
@@ -358,11 +384,61 @@ class GameService:
         }
         return hashlib.sha256(json.dumps(snapshot, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()[:16]
 
+    @staticmethod
+    def _scene_from_event(event: dict[str, Any], metadata: dict[str, Any]) -> dict[str, Any]:
+        proposal = event.get("sceneProposal") or {}
+        components = event.get("components") or {}
+        objects = list(proposal.get("localObjects") or ([components.get("object")] if components.get("object") else []))
+        actors = list(proposal.get("localActors") or ([components.get("actor")] if components.get("actor") else []))
+        facts = list(proposal.get("playerObservableFacts") or [])
+        problem = proposal.get("immediateProblem") or components.get("pressure") or "眼前的异常为何发生？"
+        questions = [problem if str(problem).endswith(("？", "?")) else f"{problem}的真正原因是什么？"]
+        return {
+            "id": metadata.get("id", event["id"]), "round": 1,
+            "actors": actors, "objects": objects, "facts": facts, "questions": questions,
+            "lastAction": None, "lastResult": None, "actions": copy.deepcopy(event.get("choices", [])),
+            "ended": False, "continueScene": True, "maxRounds": 4,
+            "title": event.get("title", "眼前的变化"), "narrative": event.get("text", ""), "type": event.get("type", "探索"),
+            "templateId": metadata.get("templateId", event.get("template_id", event["id"])),
+            "eventSeed": metadata.get("eventSeed", event.get("event_seed", event["id"])),
+            "director": copy.deepcopy(metadata.get("director", event.get("director", {}))),
+            "eventContext": copy.deepcopy(metadata.get("eventContext", event.get("eventContext"))),
+            "template": copy.deepcopy(event),
+            "narrativeAuthoritySource": event.get("narrativeAuthoritySource", "fallback"),
+            "actionDebug": copy.deepcopy(event.get("actionDebug", {})),
+        }
+
+    def _event_from_scene(self, state: dict[str, Any]) -> dict[str, Any]:
+        scene = state.get("scene")
+        if not scene or scene.get("ended"):
+            raise ValueError("当前现场已经结束")
+        event = {
+            **copy.deepcopy(scene["template"]),
+            "id": scene["id"], "template_id": scene["templateId"], "event_seed": scene["eventSeed"],
+            "title": scene["title"], "text": scene["narrative"], "type": scene["type"],
+            "choices": copy.deepcopy(scene["actions"]), "director": copy.deepcopy(scene.get("director", {})),
+            "eventContext": copy.deepcopy(scene.get("eventContext")), "round": scene["round"],
+            "sceneActive": True,
+            "sceneDebug": {
+                "sceneId": scene["id"], "round": scene["round"], "facts": scene.get("facts", []),
+                "questions": scene.get("questions", []), "lastAction": scene.get("lastAction"),
+                "lastResult": scene.get("lastResult"), "continueScene": scene.get("continueScene"),
+            },
+            "actionDebug": copy.deepcopy(scene.get("actionDebug", {})),
+        }
+        for index, choice in enumerate(event["choices"]):
+            choice["assessment"] = self.ai.assess_choice(event, choice, state, index)
+        return event
+
     def travel(self, game_id: str, location_id: str, *, narrate: bool = True) -> tuple[dict[str, Any], dict[str, Any]]:
         state = self.get(game_id)
         before = self.outcomes.snapshot(state)
         if state.get("demo_complete"):
             raise ValueError("第一章试玩已经结束，可以查看结局总结或重新开始")
+        if state.get("scene") and not state["scene"].get("ended"):
+            return state, self._event_from_scene(state)
+        if isinstance(state.get("scene"), dict) and state["scene"].get("ended"):
+            state["scene"] = None
         pending = state.get("pendingEvent", {})
         if pending.get("template", {}).get("finale_stage"):
             return state, self._chapter_fixed_event(state, pending["templateId"], state["location"], pending["template"]["finale_stage"], narrate=narrate)
@@ -431,15 +507,17 @@ class GameService:
         event["heroEncounter"] = state["heroEncounter"]
         event["narrativeAuthorityDebug"] = authority_debug
         self.hero_actors.record_encounter(state, state["heroEncounter"].get("level", 0))
-        state["pendingEvent"] = {
+        metadata = {
             "id": selection["eventId"], "templateId": selection["templateId"],
             "eventSeed": selection["seed"], "director": event["director"],
             "directorPrelude": selection["directorContext"],
             "eventContext": template["eventContext"],
             "template": template,
         }
+        state["scene"] = self._scene_from_event(event, metadata)
         self.director.record_selection(state, selection)
         self.outcomes.record(state, "travel_and_select_event", before, metadata={"locationId": location_id, "eventId": selection["eventId"], "candidateId": selection["candidateId"]})
+        event = self._event_from_scene(state)
         save_game(game_id, state)
         return state, event
 
@@ -471,6 +549,9 @@ class GameService:
         self, state: dict[str, Any], event_id: str, *, selection: dict[str, Any] | None = None,
         catalog: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
+        scene = state.get("scene")
+        if not selection and scene and scene.get("id") == event_id and not scene.get("ended"):
+            return self._event_from_scene(state)
         pending = state.get("pendingEvent", {})
         if selection:
             template_id = selection["templateId"]
@@ -639,14 +720,20 @@ class GameService:
         for key, value in source.items():
             target[key] = target.get(key, 0) + value
 
-    def resolve(self, game_id: str, event_id: str, choice_index: int) -> tuple[dict[str, Any], dict[str, Any]]:
+    def resolve(self, game_id: str, event_id: str, choice_index: int, choice_round: int | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
         state = self.get(game_id)
         before = self.outcomes.snapshot(state)
         previous = state.get("last_resolution")
-        if previous and previous.get("event_id") == event_id:
+        scene_value = state.get("scene") or {}
+        active_scene = scene_value if scene_value.get("id") == event_id and not scene_value.get("ended") else None
+        if previous and previous.get("event_id") == event_id and choice_round is not None and previous.get("sceneRound") == choice_round:
+            return state, previous
+        if previous and previous.get("event_id") == event_id and not active_scene:
             return state, previous
         if event_id in state.get("completed_events", []):
             raise ValueError("这个事件已经结算，不能重新选择")
+        if active_scene and choice_round is not None and choice_round != active_scene.get("round"):
+            raise ValueError("现场已经进入下一轮，请根据当前情况重新选择")
         event = self._event_template(state, event_id)
         choice = event["choices"][choice_index]
         result = choice["result"]
@@ -738,7 +825,7 @@ class GameService:
             victory = outcome["code"] in {"critical", "success", "partial"}
             battle_text = self.ai.generate_battle_text(player, victory, choice_index)
             state["battle_complete"] = True
-            battle = {"victory": victory, "chance": chance, "nodes": 1 if is_boss else 2, "is_boss": is_boss, "boss": event.get("boss")}
+            battle = {"victory": victory, "chance": chance, "nodes": 1 if is_boss else None, "is_boss": is_boss, "boss": event.get("boss")}
             if victory:
                 xp_gain = 40 if is_boss else 15
                 stats["combat_xp"] += xp_gain
@@ -769,9 +856,81 @@ class GameService:
             state["chapter_phase"] = "finale_ready"
 
         director = {**event.get("director", {}), "eventId": event_id}
-        world_feedback = self.outcomes.apply_world_feedback(state, director, outcome, choice)
         location = next(x for x in self.locations if x["id"] == state["location"])
-        narrative = self.ai.generate_resolution(event, choice, state, location, battle_text, outcome, world_feedback)
+        scene_ended = True
+        next_event: dict[str, Any] | None = None
+        ai_result: dict[str, Any] | None = None
+        validator_result: dict[str, Any] = {"valid": True, "errors": []}
+        ai_attempts: list[dict[str, Any]] = []
+        if active_scene:
+            revision_feedback: list[str] = []
+            for _attempt in range(2):
+                proposal, raw = self.ai.generate_scene_result(
+                    active_scene, event, choice, state, location, outcome, revision_feedback=revision_feedback,
+                )
+                validated, validator_result = self.outcomes.validate_ai_result(
+                    proposal, active_scene, outcome, choice, director, state,
+                )
+                ai_attempts.append({"raw": raw, "validatorResult": copy.deepcopy(validator_result)})
+                if validated is not None:
+                    ai_result = validated
+                    break
+                revision_feedback = validator_result["errors"]
+                if proposal is None and raw is None:
+                    break
+            if ai_result is None:
+                fallback = self.ai.fallback_scene_result(active_scene, choice, outcome, location)
+                ai_result, validator_result = self.outcomes.validate_ai_result(
+                    fallback, active_scene, outcome, choice, director, state,
+                )
+                ai_attempts.append({"raw": "local_fallback", "validatorResult": copy.deepcopy(validator_result)})
+                if ai_result is None:
+                    raise ValueError("现场结果未通过规则验证")
+
+            scene_ended = self.outcomes.update_scene_state(
+                active_scene, ai_result, choice, outcome, validator_result,
+                player_disabled=bool(state.get("dead") or state.get("captured", {}).get("active")),
+            )
+            suggested = ai_result.get("suggestedClue")
+            if suggested and outcome["code"] != "failure" and ai_result.get("factsAdded"):
+                clue_name = str(suggested["name"]).strip()
+                if clue_name and clue_name not in {item["name"] for item in player["clues"]}:
+                    clue_ability = suggested.get("ability") or choice.get("attribute") or "perception"
+                    clue = {
+                        "id": "clue-" + hashlib.sha256(f"{event_id}:{active_scene['round']}:{clue_name}".encode()).hexdigest()[:12],
+                        "name": clue_name, "source": event["title"],
+                        "ability": clue_ability,
+                        "bonus": suggested.get("bonus", 5),
+                        "modifiers": {clue_ability: suggested.get("bonus", 5)},
+                        "threadId": suggested.get("threadId"),
+                        "targetTags": suggested.get("targetTags", choice.get("targetTags", [])),
+                        "actionTags": suggested.get("actionTags", choice.get("actionTags", [])),
+                        "locationTags": suggested.get("locationTags", [state["location"]]),
+                        "factionTags": suggested.get("factionTags", []),
+                    }
+                    clue["dedupeKey"] = "|".join(filter(None, [
+                        str(clue.get("threadId") or ""), str(clue.get("ability") or ""),
+                        *sorted(str(item) for item in clue["targetTags"]),
+                    ])) or clue_name
+                    player["clues"].append(clue)
+                    granted_clues.append(clue)
+
+            narrative = ai_result["narrative"] + (f"\n\n{battle_text}" if battle_text else "")
+            if not scene_ended:
+                intensity = active_scene.get("director", {}).get("intensity", "medium")
+                difficulty = {"low": 6, "medium": 8, "high": 10, "climax": 11}.get(intensity, 8)
+                next_choices, action_debug = self.narrative_authority.next_actions(
+                    active_scene, active_scene.get("eventContext") or {}, active_scene["template"], difficulty,
+                )
+                active_scene["actions"] = next_choices
+                active_scene["narrative"] = narrative
+                active_scene["actionDebug"] = action_debug
+            world_feedback = self.outcomes.apply_world_feedback(state, director, outcome, choice) if scene_ended else {
+                "thread": None, "hero": None, "newPlayableSituation": None,
+            }
+        else:
+            world_feedback = self.outcomes.apply_world_feedback(state, director, outcome, choice)
+            narrative = self.ai.generate_resolution(event, choice, state, location, battle_text, outcome, world_feedback)
         resolution = {
             "event_id": event_id,
             "event_title": event["title"].format(location=location["name"]),
@@ -789,18 +948,31 @@ class GameService:
             "clues": granted_clues,
             "chapter_complete": state.get("chapter_complete", False),
             "worldFeedback": world_feedback,
+            "sceneRound": active_scene.get("lastResult", {}).get("round") if active_scene else None,
+            "sceneEnded": scene_ended,
+            "aiResult": ai_result,
+            "validatorResult": validator_result,
+            "aiResultAttempts": ai_attempts,
+            "nextEvent": next_event,
         }
-        if event_id not in state["completed_events"]:
+        if scene_ended and event_id not in state["completed_events"]:
             state["completed_events"].append(event_id)
-        player["memories"].append(narrative)
+        if scene_ended:
+            player["memories"].append(narrative)
         state["log"].append(narrative)
         state["last_resolution"] = resolution
-        if state.get("pendingEvent", {}).get("id") == event_id:
+        if scene_ended and state.get("pendingEvent", {}).get("id") == event_id:
             state.pop("pendingEvent", None)
         state["player_state_version"] = int(state.get("player_state_version", 1)) + 1
         state.pop("check_state_version", None)
         self._sync_character_layers(state)
-        change_entry = self.outcomes.record(state, "resolve_event", before, metadata={"eventId": event_id, "choiceIndex": choice_index, "tier": outcome["code"]})
+        if active_scene and not scene_ended:
+            next_event = self._event_from_scene(state)
+            resolution["nextEvent"] = next_event
+        change_entry = self.outcomes.record(state, "resolve_event", before, metadata={
+            "eventId": event_id, "choiceIndex": choice_index, "tier": outcome["code"],
+            "sceneRound": resolution["sceneRound"], "sceneEnded": scene_ended,
+        })
         resolution["stateChangeLog"] = change_entry
         save_game(game_id, state)
         return state, resolution

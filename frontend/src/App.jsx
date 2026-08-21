@@ -79,7 +79,17 @@ export default function App() {
     requestRef.current.controller?.abort()
     requestRef.current = { id: requestRef.current.id + 1, controller: null }
     setBusy(true)
-    try { setEventState('EVENT_RESOLVE'); const data = await api.choose(game.id, event.id, index); setGame(data.game); setResult(data.resolution); setEvent(null); setTab('story'); setEventState('COMPLETE') }
+    try {
+      setEventState('EVENT_RESOLVE')
+      const data = await api.choose(game.id, event.id, index, event.round)
+      setGame(data.game); setResult(data.resolution); setTab('story')
+      if (data.event) {
+        setEvent({ ...data.event, streaming: false, paragraphs: [] })
+        setEventState('CHOICES_AVAILABLE')
+      } else {
+        setEvent(null); setEventState('COMPLETE')
+      }
+    }
     catch (e) { setError(e.message) } finally { setBusy(false) }
   }
 

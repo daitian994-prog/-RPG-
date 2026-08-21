@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import copy
+import json
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -60,6 +62,131 @@ class OutcomeEngine:
     @staticmethod
     def _relation_stage(value: int) -> str:
         return "close" if value >= 40 else "trusted" if value >= 20 else "recognized" if value >= 5 else "hostile" if value <= -20 else "wary" if value < 0 else "stranger"
+
+    @staticmethod
+    def validate_ai_result(
+        proposal: dict[str, Any] | None,
+        scene: dict[str, Any],
+        outcome: dict[str, Any],
+        choice: dict[str, Any],
+        director: dict[str, Any],
+        state: dict[str, Any],
+    ) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+        """Validate only the hard boundaries needed before local AI facts become scene facts."""
+        errors: list[str] = []
+        if not isinstance(proposal, dict):
+            return None, {"valid": False, "errors": ["AIResult不是对象"]}
+        required = ("narrative", "factsAdded", "questionsAdded", "questionsResolved", "npcReactions", "continueScene")
+        missing = [key for key in required if key not in proposal]
+        if missing:
+            errors.append("缺少字段：" + "、".join(missing))
+        for key in ("factsAdded", "questionsAdded", "questionsResolved", "npcReactions"):
+            if key in proposal and not isinstance(proposal[key], list):
+                errors.append(f"{key}必须是数组")
+        if not isinstance(proposal.get("narrative"), str) or len(proposal.get("narrative", "").strip()) < 40:
+            errors.append("narrative过短，未说明具体发生了什么")
+        if not isinstance(proposal.get("continueScene"), bool):
+            errors.append("continueScene必须是布尔值")
+        if errors:
+            return None, {"valid": False, "errors": errors}
+
+        result = copy.deepcopy(proposal)
+        for key in ("factsAdded", "questionsAdded", "questionsResolved", "npcReactions"):
+            result[key] = list(dict.fromkeys(str(item).strip() for item in result[key] if str(item).strip()))[:8]
+        result["narrative"] = result["narrative"].strip()
+        current_questions = set(scene.get("questions", []))
+        invalid_resolved = [item for item in result["questionsResolved"] if item not in current_questions]
+        if invalid_resolved:
+            errors.append("questionsResolved包含当前现场不存在的问题")
+
+        tier = outcome["code"]
+        progress = bool(result["factsAdded"] or result["questionsResolved"])
+        leaving = any(term in str(choice.get("semanticAction", choice.get("text", ""))) for term in ("离开", "撤离", "不介入", "保持距离"))
+        if tier in {"critical", "success"} and not progress and not leaving:
+            errors.append("成功结果没有产生具体事实或解决现场问题")
+        if tier == "partial" and (not progress or not (result["questionsAdded"] or result["npcReactions"])):
+            errors.append("部分成功必须同时包含具体进展与代价或新风险")
+        if tier == "failure" and current_questions and current_questions.issubset(result["questionsResolved"]):
+            errors.append("失败结果不能解决全部核心问题")
+
+        serialized = json.dumps(result, ensure_ascii=False)
+        if re.search(r"(?:线程|Thread).{0,8}(?:阶段|Stage).{0,8}(?:推进|提升|变为|改为)", serialized, re.I):
+            errors.append("AIResult试图修改Thread Stage")
+        if re.search(r"(?:关系|能力|生命|伤势|紧迫度|认知度).{0,8}[+＋\-－]\s*\d+", serialized):
+            errors.append("AIResult试图修改程序数值")
+        protected = ("亚索", "慎", "阿卡丽", "劫", "易", "艾瑞莉娅", "艾翁", "韦鲁斯")
+        if any(re.search(fr"{name}.{{0,6}}(?:死亡|死去|被杀|永久残废)", serialized) for name in protected):
+            errors.append("AIResult试图杀死或永久伤害受保护角色")
+        allowed_actors = " ".join(str(item) for item in scene.get("actors", []))
+        for name in protected:
+            if name in serialized and name not in allowed_actors:
+                errors.append(f"不在现场的英雄{name}突然出现")
+                break
+        authorized_items = set(choice.get("result", {}).get("items", []))
+        for item in state.get("player", {}).get("inventory", []):
+            name = item.get("name", "")
+            if name and name not in authorized_items and re.search(fr"(?:获得|捡起|收起|带走).{{0,4}}{re.escape(name)}", serialized):
+                errors.append("AIResult试图擅自改变物品归属")
+                break
+
+        normalized_existing = {re.sub(r"[\s，。！？、]", "", item) for item in scene.get("facts", [])}
+        for fact in result["factsAdded"]:
+            normalized = re.sub(r"[\s，。！？、]", "", fact)
+            opposite = normalized.removeprefix("没有").removeprefix("不是")
+            if normalized.startswith(("没有", "不是")) and any(opposite and opposite in existing for existing in normalized_existing):
+                errors.append("AIResult与既有Scene Facts直接冲突")
+                break
+
+        clue = result.get("suggestedClue")
+        if clue is not None:
+            if not isinstance(clue, dict) or not str(clue.get("name", "")).strip():
+                errors.append("suggestedClue结构无效")
+            else:
+                clue["bonus"] = max(1, min(10, int(clue.get("bonus", 5))))
+                if clue.get("ability") not in {"martial", "physique", "perception", "willpower", "agility", "social", None}:
+                    clue["ability"] = choice.get("attribute")
+                clue["targetTags"] = list(dict.fromkeys(str(item).strip() for item in clue.get("targetTags", []) if str(item).strip()))[:8]
+                clue["actionTags"] = list(dict.fromkeys(str(item).strip() for item in clue.get("actionTags", []) if str(item).strip()))[:8]
+                clue["threadId"] = director.get("threadId")
+                clue["locationTags"] = [state.get("location")] if state.get("location") else []
+        if errors:
+            return None, {"valid": False, "errors": errors}
+        return result, {"valid": True, "errors": []}
+
+    @staticmethod
+    def update_scene_state(
+        scene: dict[str, Any], result: dict[str, Any], choice: dict[str, Any], outcome: dict[str, Any],
+        validator: dict[str, Any], *, player_disabled: bool = False,
+    ) -> bool:
+        """Apply a validated AIResult and decide whether this local scene remains active."""
+        for fact in result["factsAdded"]:
+            if fact not in scene.setdefault("facts", []):
+                scene["facts"].append(fact)
+        resolved = set(result["questionsResolved"])
+        scene["questions"] = [item for item in scene.setdefault("questions", []) if item not in resolved]
+        for question in result["questionsAdded"]:
+            if question not in scene["questions"]:
+                scene["questions"].append(question)
+        current_round = int(scene.get("round", 1))
+        scene["lastAction"] = {
+            "round": current_round, "id": choice.get("id"), "text": choice.get("semanticAction", choice.get("text")),
+            "goal": choice.get("goal"), "actionTags": choice.get("actionTags", []), "targetTags": choice.get("targetTags", []),
+        }
+        scene["lastResult"] = {
+            "round": current_round,
+            "checkResult": {key: outcome.get(key) for key in ("code", "label", "roll", "final_probability", "attribute_label")},
+            "aiResult": copy.deepcopy(result),
+            "validatorResult": copy.deepcopy(validator),
+        }
+        leaving = any(term in str(scene["lastAction"]["text"]) for term in ("离开", "撤离", "不介入", "保持距离"))
+        main_resolved = bool(resolved) and not scene["questions"]
+        at_limit = current_round >= int(scene.get("maxRounds", 4))
+        ended = leaving or player_disabled or main_resolved or at_limit or not result["continueScene"]
+        scene["ended"] = ended
+        scene["continueScene"] = not ended
+        if not ended:
+            scene["round"] = current_round + 1
+        return ended
 
     def apply_world_feedback(self, state: dict[str, Any], director: dict[str, Any], outcome: dict[str, Any], choice: dict[str, Any]) -> dict[str, Any]:
         feedback = {"thread": None, "hero": None, "newPlayableSituation": None}

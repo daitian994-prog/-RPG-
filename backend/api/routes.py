@@ -97,9 +97,14 @@ def narrative_stream(payload: EventNarrativeRequest):
 @router.post("/choices")
 def choose(payload: ChoiceRequest, debug: bool = False):
     try:
-        game, resolution = service.resolve(payload.game_id, payload.event_id, payload.choice_index)
+        game, resolution = service.resolve(payload.game_id, payload.event_id, payload.choice_index, payload.choice_round)
         enabled = _debug_allowed(debug)
-        return {"game": public_views.game(game, debug=enabled), "message": resolution["narrative"], "resolution": public_views.resolution(resolution, debug=enabled)}
+        next_event = resolution.get("nextEvent")
+        return {
+            "game": public_views.game(game, debug=enabled), "message": resolution["narrative"],
+            "resolution": public_views.resolution(resolution, debug=enabled),
+            "event": public_views.event(next_event, debug=enabled) if next_event else None,
+        }
     except (KeyError, ValueError, IndexError) as exc:
         raise HTTPException(400, str(exc)) from exc
 

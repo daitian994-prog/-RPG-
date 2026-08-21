@@ -68,7 +68,10 @@ class DynamicEventService:
         by_id = {action["id"]: action for action in actions}
         return [by_id[action_id] for action_id in preferred]
 
-    def _choices(self, state: dict[str, Any], seed: str, slot: int, difficulty: int, setting: str, actor: str, subject: str, intent: str) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    def _choices(
+        self, state: dict[str, Any], seed: str, slot: int, difficulty: int, setting: str, actor: str,
+        subject: str, intent: str, location_id: str, thread_id: str | None,
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         candidates = self._action_catalog(setting, actor, subject, intent)
         player = state.get("player", {})
         if player.get("clues"):
@@ -124,7 +127,13 @@ class DynamicEventService:
             ability = action.get("ability") if requires_check else None
             result: dict[str, Any] = {"text": f"{action['semanticAction']}。你的决定让局势沿着“{action['goal']}”的方向发展。", "personality": {action["trait"]: 3 if requires_check else 1}}
             if action["outcome"] == "information":
-                result["clues"] = [{"name": f"关于{subject}的可靠线索", "source": "现场发现", "modifiers": {"perception": 5}, "events": []}]
+                result["clues"] = [{
+                    "id": "clue-" + hashlib.sha256(f"{seed}:{subject}".encode()).hexdigest()[:12],
+                    "name": f"关于{subject}的可靠线索", "source": "现场发现",
+                    "ability": "perception", "bonus": 5, "modifiers": {"perception": 5},
+                    "threadId": thread_id, "targetTags": [subject],
+                    "actionTags": ["investigate"], "locationTags": [location_id], "factionTags": [],
+                }]
             if action["id"] == "carry":
                 result["statuses"] = [{"id": "dynamic_strain", "name": "劳损", "source": subject, "duration": 1, "modifiers": {"physique": -5}, "on": "partial"}]
             choice = {
@@ -132,6 +141,7 @@ class DynamicEventService:
                 "approach": action["approach"], "requiresCheck": requires_check, "risk": action["risk"],
                 "possibleOutcomeClass": action["outcome"], "requirements": [action["requirement"]] if action.get("requirement") else [],
                 "text": action["text"], "hint": action["hint"], "result": result,
+                "actionTags": [action["duplicateGroup"]], "targetTags": [subject],
             }
             if requires_check:
                 choice.update({"attribute": ability, "requiredAbility": ability, "difficulty": max(5, min(12, difficulty + index - 1))})
@@ -159,7 +169,9 @@ class DynamicEventService:
         difficulty = 6 if intensity == "low" else 8 if intensity == "medium" else 10 if intensity == "high" else 11
         composition = f"{location_id}|{category}|{intent}|{setting}|{actor}|{obj}|{pressure}|{stage_fact or '-'}"
         event_id = "dyn-" + hashlib.sha256(f"{seed}:{slot}:{composition}".encode()).hexdigest()[:16]
-        choices, action_debug = self._choices(state, seed, slot, difficulty, setting, actor, obj, intent)
+        choices, action_debug = self._choices(
+            state, seed, slot, difficulty, setting, actor, obj, intent, location_id, thread["id"] if thread else None,
+        )
         return {
             "id": event_id, "type": profile["type"], "locations": [location_id], "title": title, "text": text,
             "choices": choices,

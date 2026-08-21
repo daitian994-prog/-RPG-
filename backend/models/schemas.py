@@ -21,6 +21,7 @@ class ChoiceRequest(BaseModel):
     game_id: str
     event_id: str
     choice_index: int = Field(ge=0, le=3)
+    choice_round: int | None = Field(default=None, ge=1, le=4)
 
 
 class DialogueRequest(BaseModel):

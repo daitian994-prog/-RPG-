@@ -16,7 +16,7 @@ class PublicViewTest(unittest.TestCase):
         view = self.views.game(game)
         for key in (
             "worldState", "directorState", "pendingEvent", "aiNarratorDebug", "stateChangeLog",
-            "heroActors", "heroActionLog", "heroEncounter", "narrativeAuthorityDebug",
+            "heroActors", "heroActionLog", "heroEncounter", "narrativeAuthorityDebug", "scene",
         ):
             self.assertNotIn(key, view)
         self.assertNotIn("legacyCombatStats", view["player"])

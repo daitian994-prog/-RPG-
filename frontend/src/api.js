@@ -33,7 +33,7 @@ export const api = {
   travel: (gameId, locationId) => request('/api/travel', { method: 'POST', body: JSON.stringify({ game_id: gameId, location_id: locationId }) }),
   prepareTravel: (gameId, locationId, signal) => request('/api/travel/prepare', { method: 'POST', body: JSON.stringify({ game_id: gameId, location_id: locationId }), signal }),
   streamEvent: (gameId, eventId, options) => streamNdjson('/api/events/narrative-stream', { game_id: gameId, event_id: eventId }, options),
-  choose: (gameId, eventId, choiceIndex) => request('/api/choices', { method: 'POST', body: JSON.stringify({ game_id: gameId, event_id: eventId, choice_index: choiceIndex }) }),
+  choose: (gameId, eventId, choiceIndex, choiceRound) => request('/api/choices', { method: 'POST', body: JSON.stringify({ game_id: gameId, event_id: eventId, choice_index: choiceIndex, choice_round: choiceRound }) }),
   recover: (gameId, method = 'rest') => request('/api/recover', { method: 'POST', body: JSON.stringify({ game_id: gameId, method }) }),
   interveneThread: (gameId, threadId, strategy) => request('/api/world-threads/intervene', { method: 'POST', body: JSON.stringify({ game_id: gameId, thread_id: threadId, strategy }) }),
   focusWorldTopic: (gameId, topicId, focused) => request('/api/world-focus', { method: 'POST', body: JSON.stringify({ game_id: gameId, topic_id: topicId, focused }) }),

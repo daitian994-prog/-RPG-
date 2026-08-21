@@ -65,6 +65,27 @@ class ClosedLoopTest(unittest.TestCase):
         self.assertEqual(self.state["heroRelationships"]["shen"]["score"], 6)
         self.assertEqual(len(self.state["heroRelationships"]["shen"]["history"]), 1)
 
+    def test_ai_result_validator_accepts_specific_progress_and_rejects_thread_stage_changes(self):
+        scene = {
+            "id": "bell", "round": 1, "maxRounds": 4, "actors": ["寺庙老人"], "objects": ["铜钟"],
+            "facts": ["铜钟没有撞槌"], "questions": ["铜钟为什么震动？"], "ended": False,
+        }
+        outcome = {"code": "success", "label": "成功"}
+        choice = {"id": "inspect", "semanticAction": "检查钟座", "attribute": "perception", "result": {}}
+        valid = {
+            "narrative": "你在钟座下方找到一道持续渗出冷气的裂隙，寺庙老人俯身确认后，第一次说出昨夜也听见过地下回声。",
+            "factsAdded": ["铜钟的震动来自钟座下方的裂隙"], "questionsAdded": ["裂隙通向哪里？"],
+            "questionsResolved": ["铜钟为什么震动？"], "npcReactions": ["寺庙老人确认昨夜听见地下回声"],
+            "continueScene": True, "suggestedClue": None,
+        }
+        accepted, debug = self.outcomes.validate_ai_result(valid, scene, outcome, choice, {"threadId": "spirit_anomaly"}, self.state)
+        self.assertTrue(debug["valid"])
+        self.assertIsNotNone(accepted)
+        invalid = {**valid, "narrative": valid["narrative"] + " 世界线程阶段推进至第六阶段。"}
+        rejected, debug = self.outcomes.validate_ai_result(invalid, scene, outcome, choice, {"threadId": "spirit_anomaly"}, self.state)
+        self.assertIsNone(rejected)
+        self.assertTrue(any("Thread Stage" in item for item in debug["errors"]))
+
     def test_state_change_log_is_auditable_and_bounded(self):
         for index in range(55):
             before = self.outcomes.snapshot(self.state)

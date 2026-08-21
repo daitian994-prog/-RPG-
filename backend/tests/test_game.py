@@ -30,6 +30,15 @@ class GameLoopTest(unittest.TestCase):
         save_game(game["id"], game)
         return event_id
 
+    def _finish_event(self, game, event, first_index=0):
+        initial_index = next((i for i, item in enumerate(event["choices"]) if "离开" in item["text"] or "撤离" in item["text"]), first_index) if event.get("round", 1) > 1 else first_index
+        game, resolution = self.service.resolve(game["id"], event["id"], initial_index, event.get("round"))
+        while not resolution.get("sceneEnded", True):
+            event = resolution["nextEvent"]
+            leave_index = next((i for i, item in enumerate(event["choices"]) if "离开" in item["text"] or "撤离" in item["text"]), 0)
+            game, resolution = self.service.resolve(game["id"], event["id"], leave_index, event.get("round"))
+        return game, resolution
+
     def test_chapter_yasuo_meeting_reflects_first_meeting_recognition_and_memory(self):
         first = self.service.new_game(["peace"] * 6)
         first_event = self.service._chapter_boss_event(first, narrate=False)
@@ -50,12 +59,17 @@ class GameLoopTest(unittest.TestCase):
         self.assertEqual(game["action_points"], 4)
         game, event = self.service.travel(game["id"], "war_ruins")
         self.assertEqual(game["action_points"], 3)
-        game, resolution = self.service.resolve(game["id"], event["id"], 0)
+        game, first = self.service.resolve(game["id"], event["id"], 0, event.get("round"))
+        self.assertTrue(first["aiResult"]["factsAdded"] or first["aiResult"]["questionsResolved"] or first["sceneEnded"])
+        if first["sceneEnded"]:
+            resolution = first
+        else:
+            game, resolution = self._finish_event(game, first["nextEvent"])
         self.assertTrue(resolution["narrative"])
         self.assertIn("changes", resolution)
         self.assertIn(event["id"], game["completed_events"])
         self.assertEqual(len(game["player"]["memories"]), 1)
-        self.assertGreaterEqual(len("".join(resolution["narrative"].split())), 250)
+        self.assertGreaterEqual(len("".join(first["narrative"].split())), 40)
         self.assertNotIn("已经确定的结果", resolution["narrative"])
 
     def test_prepare_travel_resolves_facts_without_remote_narration(self):
@@ -108,7 +122,7 @@ class GameLoopTest(unittest.TestCase):
         self.assertTrue(game["player"]["inventory"][0]["description"])
         self.assertNotIn("bonuses", game["player"]["inventory"][0])
         self.assertIn("effects", game["player"]["inventory"][0])
-        self.assertEqual(game["gameVersion"], "0.4.0")
+        self.assertEqual(game["gameVersion"], "0.4.1")
 
     def test_world_thread_intervention_costs_time_and_persists(self):
         game = self.service.new_game(["peace", "power", "freedom", "spirit", "destiny", "peace"])
@@ -253,7 +267,8 @@ class GameLoopTest(unittest.TestCase):
         game, event = self.service.travel(game["id"], "war_ruins", narrate=False)
         with patch("backend.services.ai_service.random.randint", return_value=1):
             game, resolution = self.service.resolve(game["id"], event["id"], 0)
-        self.assertGreater(len(resolution["narrative"]), 100)
+        self.assertGreater(len(resolution["narrative"]), 40)
+        self.assertTrue(resolution["aiResult"]["factsAdded"] or resolution["aiResult"]["questionsAdded"] or resolution["sceneEnded"])
         self.assertIsInstance(resolution["changes"]["attributes"], dict)
         self.assertTrue(resolution["changes"]["personality"])
         self.assertEqual(resolution["changes"]["fate"], {})
@@ -265,16 +280,16 @@ class GameLoopTest(unittest.TestCase):
     def test_seeded_resolution_cannot_be_changed_by_refresh(self):
         game = self.service.new_game(["peace", "power", "freedom", "spirit", "destiny", "peace"])
         game, event = self.service.travel(game["id"], "war_ruins", narrate=False)
-        game, first = self.service.resolve(game["id"], event["id"], 0)
-        game, second = self.service.resolve(game["id"], event["id"], 0)
+        game, first = self.service.resolve(game["id"], event["id"], 0, event.get("round"))
+        game, second = self.service.resolve(game["id"], event["id"], 0, event.get("round"))
         self.assertEqual(first["outcome"]["roll"], second["outcome"]["roll"])
         self.assertEqual(first["outcome"]["tier"], second["outcome"]["tier"])
-        self.assertEqual(len(game["player"]["memories"]), 1)
+        self.assertEqual(len(game["player"]["memories"]), int(first["sceneEnded"]))
 
     def test_completed_event_cannot_be_replayed_with_another_choice(self):
         game = self.service.new_game(["peace", "power", "freedom", "spirit", "destiny", "peace"])
         game, event = self.service.travel(game["id"], "war_ruins", narrate=False)
-        game, first = self.service.resolve(game["id"], event["id"], 0)
+        game, first = self._finish_event(game, event)
         game, replay = self.service.resolve(game["id"], event["id"], 2)
         self.assertEqual(first["choice_index"], replay["choice_index"])
         self.assertEqual(len(game["player"]["memories"]), 1)
@@ -335,11 +350,84 @@ class GameLoopTest(unittest.TestCase):
         self.assertIn(resolution["outcome"]["tier"], {"critical", "success", "partial", "failure"})
         self.assertEqual(resolution["battle"]["chance"], resolution["outcome"]["final_probability"])
 
+    def test_copper_bell_scene_continues_with_a_concrete_fact(self):
+        from backend.database.db import save_game
+        game = self.service.new_game(["peace"] * 6)
+        event = {
+            "id": "copper-bell-scene", "dynamic": True, "type": "探索", "title": "无槌铜钟",
+            "text": "山寺后院没有风，一口没有撞槌的铜钟却在轻微震动。",
+            "event_seed": "copper-bell", "director": {"intensity": "medium", "threadId": "spirit_anomaly"},
+            "eventContext": {"hardFacts": ["铜钟没有撞槌"], "forbiddenChanges": ["不得推进世界线程阶段"]},
+            "sceneProposal": {
+                "localActors": ["寺庙老人"], "localObjects": ["铜钟", "钟座"],
+                "immediateProblem": "铜钟为什么会在无风时震动？",
+                "playerObservableFacts": ["铜钟没有撞槌", "周围没有明显风", "铜钟正在轻微震动"],
+            },
+            "choices": [{
+                "id": "inspect-bell", "text": "检查铜钟与钟座的缝隙", "semanticAction": "检查铜钟与钟座的缝隙",
+                "goal": "查明震动来源", "approach": "逐处核对", "attribute": "perception", "difficulty": 8,
+                "automatic": "success", "requiresCheck": True, "risk": "中", "actionTags": ["investigate"],
+                "targetTags": ["铜钟", "钟座"], "result": {"text": "检查钟座。", "personality": {"spirit": 1}},
+            }],
+        }
+        game["location"] = "mountain_temple"
+        game["scene"] = self.service._scene_from_event(event, {
+            "id": event["id"], "templateId": event["id"], "eventSeed": event["event_seed"],
+            "director": event["director"], "eventContext": event["eventContext"],
+        })
+        save_game(game["id"], game)
+        with patch.dict("os.environ", {"RUNETERRA_DISABLE_REMOTE_AI": "1"}, clear=False):
+            game, resolution = self.service.resolve(game["id"], event["id"], 0, 1)
+        self.assertFalse(resolution["sceneEnded"])
+        self.assertIn("震动来自钟座下方", " ".join(resolution["aiResult"]["factsAdded"]))
+        self.assertEqual(resolution["nextEvent"]["round"], 2)
+        self.assertIn("震动来自钟座下方", " ".join(game["scene"]["facts"]))
+
+    def test_leaving_can_end_a_scene_in_one_round(self):
+        from backend.database.db import save_game
+        game = self.service.new_game(["peace"] * 6)
+        event = {
+            "id": "lost-object-scene", "dynamic": True, "type": "日常", "title": "路边遗失物",
+            "text": "路边放着一只普通布包，附近没有人。", "event_seed": "leave-now", "director": {},
+            "eventContext": {"hardFacts": [], "forbiddenChanges": []},
+            "sceneProposal": {"localActors": [], "localObjects": ["布包"], "immediateProblem": "布包是谁遗失的？", "playerObservableFacts": ["布包无人看管"]},
+            "choices": [{
+                "id": "leave", "text": "不碰布包，直接离开", "semanticAction": "不碰布包，直接离开",
+                "goal": "避免卷入", "approach": "保持距离", "requiresCheck": False, "risk": "低",
+                "actionTags": ["withdraw"], "targetTags": ["布包"], "result": {"text": "你离开了。", "personality": {"freedom": 1}},
+            }],
+        }
+        game["scene"] = self.service._scene_from_event(event, {"id": event["id"], "templateId": event["id"], "eventSeed": event["event_seed"], "director": {}, "eventContext": event["eventContext"]})
+        save_game(game["id"], game)
+        with patch.dict("os.environ", {"RUNETERRA_DISABLE_REMOTE_AI": "1"}, clear=False):
+            game, resolution = self.service.resolve(game["id"], event["id"], 0, 1)
+        self.assertTrue(resolution["sceneEnded"])
+        self.assertIn(event["id"], game["completed_events"])
+
+    def test_only_two_relevant_nonduplicate_clues_apply(self):
+        game = self.service.new_game(["peace"] * 6)
+        game["location"] = "mountain_temple"
+        game["player"]["clues"] = [
+            {"name": "旧铜钟记录", "ability": "perception", "bonus": 5, "targetTags": ["铜钟"], "dedupeKey": "bell"},
+            {"name": "钟座裂隙拓印", "ability": "perception", "bonus": 8, "targetTags": ["铜钟"], "dedupeKey": "bell"},
+            {"name": "灵体震颤规律", "ability": "perception", "bonus": 4, "actionTags": ["investigate"], "dedupeKey": "method"},
+            {"name": "诺克萨斯换岗线索", "ability": "perception", "bonus": 9, "targetTags": ["诺克萨斯"]},
+            {"name": "山道路况线索", "ability": "perception", "bonus": 9, "targetTags": ["山道"]},
+            {"name": "井水倒影线索", "ability": "perception", "bonus": 9, "targetTags": ["井水"]},
+        ]
+        event = {"id": "bell-check", "event_seed": "bell", "type": "探索", "director": {"threadId": "spirit_anomaly"}}
+        choice = {"id": "inspect", "text": "检查山寺铜钟", "semanticAction": "检查山寺铜钟", "goal": "查明震动", "approach": "观察", "attribute": "perception", "difficulty": 8, "actionTags": ["investigate"], "targetTags": ["铜钟"], "result": {"personality": {"spirit": 1}}}
+        assessment = self.service.ai.assess_choice(event, choice, game, 0)
+        clue_modifiers = [item for item in assessment["applied_modifiers"] if item["source"] == "clue"]
+        self.assertEqual([item["label"] for item in clue_modifiers], ["钟座裂隙拓印", "灵体震颤规律"])
+        self.assertEqual(sum(item["value"] for item in clue_modifiers), 12)
+
     def test_one_year_timeline_triggers_chapter_boss(self):
         game = self.service.new_game(["peace", "power", "freedom", "spirit", "destiny", "power"])
         event = None
         for _ in range(12):
             game, event = self.service.travel(game["id"], "pallas")
+            game, _ = self._finish_event(game, event)
         self.assertEqual(game["time"]["chapter_limit"], 16)
         self.assertEqual(game["time"]["actions_per_season"], 4)
         self.assertEqual(game["chapter_phase"], "finale_ready")
@@ -357,8 +445,13 @@ class GameLoopTest(unittest.TestCase):
         self.assertEqual(event["boss"]["name"], "血旗督军·卡尔戈")
         self.assertIn("亚索", event["text"])
 
-        with patch("backend.services.game_service.random.randint", return_value=1):
-            game, resolution = self.service.resolve(game["id"], event["id"], 0)
+        for version in range(500):
+            game["player_state_version"] = version
+            if self.service.ai.evaluate_event_outcome(event, event["choices"][0], game, 0)["code"] in {"critical", "success", "partial"}:
+                break
+        from backend.database.db import save_game
+        save_game(game["id"], game)
+        game, resolution = self.service.resolve(game["id"], event["id"], 0)
         self.assertTrue(resolution["battle"]["is_boss"])
         self.assertTrue(resolution["battle"]["victory"])
         self.assertTrue(game["chapter_complete"])

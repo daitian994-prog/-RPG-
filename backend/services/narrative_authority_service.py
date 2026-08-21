@@ -223,11 +223,41 @@ class NarrativeAuthorityService:
         }
         return consequences.get(ability, f"你完成了{semantic}，现场随之出现了足以推动“{goal}”的具体变化。")
 
+    @staticmethod
+    def _action_tags(action: dict[str, Any], ability: str | None, requires_check: bool) -> list[str]:
+        text = " ".join(str(action.get(key, "")) for key in ("semanticAction", "goal", "approach", "target"))
+        groups = (
+            ("withdraw", ("离开", "撤离", "不介入", "保持距离")),
+            ("record", ("记下", "记录")),
+            ("social", ("询问", "交涉", "说服", "安抚", "核对说法")),
+            ("stealth", ("藏", "潜", "悄悄", "绕到", "隐蔽")),
+            ("investigate", ("观察", "检查", "辨认", "痕迹", "倾听", "调查", "判断", "核对")),
+            ("combat", ("拔剑", "武器", "攻击", "迎战", "压制", "格挡", "威慑")),
+            ("protect", ("保护", "搬", "抬", "顶住", "承受", "拖开", "挡在")),
+            ("spirit", ("灵息", "灵体", "异变", "意识", "感受", "抵抗", "震颤")),
+        )
+        tags = [tag for tag, terms in groups if any(term in text for term in terms)]
+        if not requires_check and not tags:
+            tags.append("deliberate")
+        return list(dict.fromkeys(tags))
+
+    @staticmethod
+    def _target_tags(action: dict[str, Any]) -> list[str]:
+        text = " ".join(str(action.get(key, "")) for key in ("semanticAction", "goal", "approach", "target"))
+        known = (
+            "铜钟", "钟座", "灵体", "灵息", "诺克萨斯", "斥候", "山道", "竹林", "井水", "古井",
+            "爆裂符", "木箱", "药箱", "石碑", "林灵", "森林", "遗迹", "旅人", "药师", "短剑",
+        )
+        tags = [term for term in known if term in text]
+        target = re.sub(r"[，。！？、\s]", "", str(action.get("target", "")))
+        if 1 < len(target) <= 16:
+            tags.insert(0, target)
+        return list(dict.fromkeys(tags))
+
     def map_actions(self, proposals: list[dict[str, Any]], envelope: dict[str, Any], difficulty: int, fallback: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         accepted: list[dict[str, Any]] = []
         rejected: list[dict[str, Any]] = []
         normalized: set[str] = set()
-        used_mechanics: set[int] = set()
         pool = list(proposals) if len(proposals) >= 2 else list(proposals) + [
             {"semanticAction": item.get("semanticAction", item["text"]), "goal": item.get("goal", "处理眼前问题"), "approach": item.get("approach", item.get("hint", "谨慎行动")), "expectedRiskType": item.get("risk", "中"), "target": None}
             for item in fallback
@@ -250,24 +280,20 @@ class NarrativeAuthorityService:
             risk = risk if risk in {"低", "中", "高", "致命"} else "中"
             index = len(accepted)
             trait = TRAIT_BY_ABILITY.get(ability, "destiny")
-            mechanic_index = next((
-                item_index for item_index, item in enumerate(fallback)
-                if item_index not in used_mechanics and item.get("attribute") == ability
-            ), None)
-            if mechanic_index is None:
-                mechanic_index = next((item_index for item_index in range(len(fallback)) if item_index not in used_mechanics), None)
-            mechanical = fallback[mechanic_index] if mechanic_index is not None else {}
-            if mechanic_index is not None:
-                used_mechanics.add(mechanic_index)
-            result: dict[str, Any] = copy.deepcopy(mechanical.get("result", {}))
-            result["text"] = self._contextual_consequence(proposal, ability, requires_check)
-            result["personality"] = {trait: 1 if not requires_check else 3}
+            # AI actions describe intent only. They must never inherit rewards, clues,
+            # statuses or relationship packages from an unrelated fallback choice.
+            result: dict[str, Any] = {
+                "text": self._contextual_consequence(proposal, ability, requires_check),
+                "personality": {trait: 1 if not requires_check else 3},
+            }
             choice = {
                 "id": f"ai-action-{index}", "semanticAction": semantic, "goal": proposal["goal"], "approach": proposal["approach"],
                 "requiresCheck": requires_check, "risk": risk, "possibleOutcomeClass": "local_change",
-                "requirements": copy.deepcopy(mechanical.get("requirements", [])),
+                "requirements": [],
                 "text": semantic, "hint": f"目标：{proposal['goal']}；代价可能来自{risk}风险", "result": result,
                 "abilityMappingReason": mapping_reason,
+                "actionTags": self._action_tags(proposal, ability, requires_check),
+                "targetTags": self._target_tags(proposal),
             }
             if requires_check:
                 risk_delta = {"低": -1, "中": 0, "高": 1, "致命": 2}[risk]
@@ -279,6 +305,48 @@ class NarrativeAuthorityService:
         if len(accepted) < 2:
             raise ValueError("AI与保底行动均未能提供足够合法选项")
         return accepted, {"accepted": [{"semanticAction": item["semanticAction"], "ability": item.get("attribute"), "mappingReason": item["abilityMappingReason"]} for item in accepted], "rejectedActions": rejected}
+
+    def next_actions(
+        self, scene: dict[str, Any], envelope: dict[str, Any], template: dict[str, Any], difficulty: int,
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        """Create the next round's actions from the persisted scene, with a local fallback."""
+        proposals: list[dict[str, Any]] = []
+        raw: str | None = None
+        remote_valid = False
+        if os.getenv("RUNETERRA_DISABLE_REMOTE_AI") != "1" and self.remote.configured:
+            try:
+                response = self.remote.generate(
+                    system=(
+                        "你是互动RPG当前现场的行动导演。根据SceneState提出2到5条此刻真正可做、语义不同的行为。"
+                        "只输出JSON对象，唯一字段为actions。每条只含semanticAction、goal、approach、expectedRiskType、target。"
+                        "不写属性、成功率、奖励、线索、状态或结果。行动必须承接已有facts与尚未解决的questions。"
+                    ),
+                    prompt=json.dumps({
+                        "sceneState": {key: scene.get(key) for key in ("round", "actors", "objects", "facts", "questions", "lastAction", "lastResult")},
+                        "hardFacts": envelope.get("hardFacts", []),
+                        "forbiddenChanges": envelope.get("forbiddenChanges", []),
+                    }, ensure_ascii=False),
+                    temperature=0.72,
+                    max_tokens=650,
+                )
+                raw = response["text"]
+                parsed = self._parse_json(raw)
+                if isinstance(parsed.get("actions"), list):
+                    proposals = parsed["actions"]
+                    remote_valid = len(proposals) >= 2
+            except (DeepSeekError, json.JSONDecodeError, TypeError, KeyError) as exc:
+                raw = str(exc)
+        if len(proposals) < 2:
+            target = (scene.get("objects") or ["现场的关键痕迹"])[0]
+            actor = (scene.get("actors") or ["在场的人"])[0]
+            question = (scene.get("questions") or [f"{target}为何出现异常"])[0]
+            proposals = [
+                {"semanticAction": f"继续检查{target}最容易被忽略的部分", "goal": f"回答：{question}", "approach": "核对新旧痕迹", "expectedRiskType": "中", "target": target},
+                {"semanticAction": f"询问{actor}刚才发生的细节", "goal": f"回答：{question}", "approach": "让说法与现场事实互相印证", "expectedRiskType": "低", "target": actor},
+                {"semanticAction": "记住已经确认的事实并离开现场", "goal": "停止承担眼前风险", "approach": "主动结束介入", "expectedRiskType": "低", "target": target},
+            ]
+        choices, debug = self.map_actions(proposals, envelope, difficulty, template.get("choices", []))
+        return choices, {"source": "ai" if remote_valid else "fallback", "rawAIOutput": raw, **debug}
 
     def materialize(self, envelope: dict[str, Any], template: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
         remote_proposal, raw = self._remote_scene(envelope)

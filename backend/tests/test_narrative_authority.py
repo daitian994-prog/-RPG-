@@ -73,10 +73,12 @@ class NarrativeAuthorityTest(unittest.TestCase):
 
     def test_semantic_actions_are_mapped_only_after_proposal(self):
         service = NarrativeAuthorityService(FakeSceneAI())
+        self.template["choices"][0]["result"] = {"items": ["不相关奖励"], "clues": [{"name": "不相关线索"}], "statuses": [{"name": "不相关状态"}]}
         event, debug = service.materialize(self.envelope, self.template)
         self.assertEqual([item.get("attribute") for item in event["choices"]], ["perception", "social", None])
         self.assertFalse(event["choices"][2]["requiresCheck"])
         self.assertTrue(all("mappingReason" in item for item in debug["accepted"]))
+        self.assertTrue(all(not ({"items", "clues", "statuses"} & set(item["result"])) for item in event["choices"]))
 
     def test_rule_claim_is_rejected_and_falls_back(self):
         ai = FakeSceneAI()

@@ -41,6 +41,8 @@ class PublicViewService:
                 item.pop("check_bonuses", None)
                 item.pop("modifiers", None)
                 item.pop("events", None)
+                for internal in ("ability", "bonus", "threadId", "targetTags", "actionTags", "locationTags", "factionTags", "dedupeKey"):
+                    item.pop(internal, None)
         result.get("bodyCondition", {}).pop("modifiers", None)
         return result
 
@@ -54,7 +56,7 @@ class PublicViewService:
         for key in (
             "worldState", "directorState", "pendingEvent", "chapterFinale", "aiNarratorDebug", "stateChangeLog",
             "check_state_version", "heroActors", "heroActionLog", "heroEncounter",
-            "narrativeAuthorityDebug",
+            "narrativeAuthorityDebug", "scene",
         ):
             result.pop(key, None)
         if result.get("last_resolution"):
@@ -78,7 +80,7 @@ class PublicViewService:
     def event(self, event: dict[str, Any], *, debug: bool = False) -> dict[str, Any]:
         if debug:
             return event
-        allowed = {"id", "type", "title", "text", "boss", "chapter_finale", "finale_stage", "lockChoicesUntilComplete", "streaming", "paragraphs"}
+        allowed = {"id", "type", "title", "text", "boss", "chapter_finale", "finale_stage", "lockChoicesUntilComplete", "streaming", "paragraphs", "round", "sceneActive"}
         result = {key: deepcopy(value) for key, value in event.items() if key in allowed}
         result["choices"] = []
         for choice in event.get("choices", []):
@@ -94,6 +96,10 @@ class PublicViewService:
             return resolution
         result = deepcopy(resolution)
         result.pop("stateChangeLog", None)
+        result.pop("nextEvent", None)
+        result.pop("aiResult", None)
+        result.pop("validatorResult", None)
+        result.pop("aiResultAttempts", None)
         for bucket in ("changes", "costs"):
             if bucket in result:
                 result[bucket] = {key: value for key, value in result[bucket].items() if key in {"personality", "fate", "relations"}}

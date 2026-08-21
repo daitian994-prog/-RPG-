@@ -153,31 +153,78 @@ class AIService:
         primary_trait = max(personality_effects, key=personality_effects.get) if personality_effects else "destiny"
         attribute, _ = self.trait_checks[primary_trait]
         player = game["player"]
+        selected_attribute = choice.get("attribute", attribute)
         difficulty = choice.get("difficulty", {"日常": 6, "NPC": 7, "成长": 8, "探索": 8, "命运": 9, "战斗": 9}.get(event["type"], 8))
         if event.get("chapter_only"):
             difficulty = 11
         modifiers: list[Modifier] = []
         # Personality describes preferred behavior; it never substitutes for capability.
         body = player.get("bodyCondition", {})
-        body_bonus = body.get("modifiers", {}).get(choice.get("attribute", attribute), 0)
+        body_bonus = body.get("modifiers", {}).get(selected_attribute, 0)
         if body_bonus:
             modifiers.append(Modifier("body_condition", body.get("label", "伤势"), body_bonus))
         for trait in player.get("traits", []):
-            bonus = trait.get("modifiers", {}).get(choice.get("attribute", attribute), 0)
+            bonus = trait.get("modifiers", {}).get(selected_attribute, 0)
             if bonus:
                 modifiers.append(Modifier("trait", trait.get("name", trait["id"]), bonus))
+        action_text = " ".join(str(choice.get(key, "")) for key in ("semanticAction", "text", "goal", "approach"))
+        action_tags = set(choice.get("actionTags", []))
+        inferred_actions = {
+            "withdraw": ("离开", "撤离", "不介入"), "record": ("记下", "记录"),
+            "social": ("询问", "交涉", "说服", "安抚"), "stealth": ("藏", "潜", "隐蔽", "绕到"),
+            "investigate": ("观察", "检查", "辨认", "痕迹", "调查", "核对"),
+            "combat": ("拔剑", "武器", "攻击", "迎战", "格挡"), "protect": ("保护", "顶住", "承受", "挡在"),
+            "spirit": ("灵息", "灵体", "异变", "感受", "震颤"),
+        }
+        action_tags.update(tag for tag, terms in inferred_actions.items() if any(term in action_text for term in terms))
+        target_tags = set(choice.get("targetTags", []))
+        for term in ("铜钟", "钟座", "灵体", "灵息", "诺克萨斯", "斥候", "山道", "竹林", "井水", "古井", "爆裂符", "木箱", "药箱", "石碑", "林灵", "森林", "遗迹"):
+            if term in action_text:
+                target_tags.add(term)
+        faction_tags = {"noxian"} if any(term in action_text for term in ("诺克萨斯", "血旗", "斥候")) else set()
+        thread_id = (event.get("director") or {}).get("threadId")
+        location_id = game.get("location")
         for item in player.get("inventory", []):
-            bonus = item.get("check_bonuses", {}).get(attribute, 0)
-            if bonus:
+            bonus = item.get("check_bonuses", {}).get(selected_attribute, 0)
+            item_action_tags = set(item.get("actionTags", []))
+            item_target_tags = set(item.get("targetTags", []))
+            if bonus and ((item_action_tags & action_tags) or (item_target_tags & target_tags)):
                 modifiers.append(Modifier("equipment", item["name"], bonus))
         for status in player.get("statuses", []):
-            bonus = status.get("modifiers", {}).get(attribute, status.get("modifiers", {}).get("all", 0))
+            bonus = status.get("modifiers", {}).get(selected_attribute, status.get("modifiers", {}).get("all", 0))
             if bonus:
                 modifiers.append(Modifier("status", status["name"], bonus))
+        applicable_clues: list[tuple[int, int, str, dict[str, Any]]] = []
         for clue in player.get("clues", []):
-            bonus = clue.get("modifiers", {}).get(attribute, clue.get("modifiers", {}).get("all", 0))
-            if bonus and (not clue.get("events") or event["id"] in clue["events"]):
-                modifiers.append(Modifier("clue", clue["name"], bonus))
+            bonus = int(clue.get("bonus", clue.get("modifiers", {}).get(selected_attribute, clue.get("modifiers", {}).get("all", 0))))
+            if not bonus or clue.get("ability") not in (None, selected_attribute):
+                continue
+            score = 0
+            if thread_id and clue.get("threadId") == thread_id:
+                score += 5
+            if set(clue.get("targetTags", [])) & target_tags:
+                score += 4
+            if set(clue.get("actionTags", [])) & action_tags:
+                score += 3
+            if event["id"] in clue.get("events", []):
+                score += 5
+            weak = int(bool(location_id and location_id in clue.get("locationTags", []))) + int(bool(set(clue.get("factionTags", [])) & faction_tags))
+            if score == 0 and weak >= 2:
+                score = 2
+            if score <= 0:
+                continue
+            duplicate_key = clue.get("dedupeKey") or "|".join(filter(None, [
+                str(clue.get("threadId") or ""), str(clue.get("ability") or ""),
+                *sorted(str(item) for item in clue.get("targetTags", [])),
+            ])) or clue.get("name")
+            applicable_clues.append((score, bonus, duplicate_key, clue))
+        best_by_type: dict[str, tuple[int, int, str, dict[str, Any]]] = {}
+        for candidate in applicable_clues:
+            key = candidate[2]
+            if key not in best_by_type or candidate[:2] > best_by_type[key][:2]:
+                best_by_type[key] = candidate
+        for _score, bonus, _key, clue in sorted(best_by_type.values(), key=lambda item: (item[0], item[1]), reverse=True)[:2]:
+            modifiers.append(Modifier("clue", clue["name"], bonus))
         for npc_id in choice.get("result", {}).get("relations", {}):
             score = game.get("relationships", {}).get(npc_id, {}).get("score", 0)
             if score >= 10:
@@ -186,8 +233,8 @@ class AIService:
         modifiers.extend(Modifier(item.get("source", "context"), item["label"], item["value"], item.get("mode", "percent")) for item in context)
         return CheckRequest(
             event_id=event["id"], event_seed=event.get("event_seed", event["id"]),
-            choice_id=choice.get("id", f"choice-{choice_index}"), attribute=choice.get("attribute", attribute),
-            ability=player["coreAbilities"][choice.get("attribute", attribute)], difficulty=difficulty,
+            choice_id=choice.get("id", f"choice-{choice_index}"), attribute=selected_attribute,
+            ability=player["coreAbilities"][selected_attribute], difficulty=difficulty,
             player_state_version=str(game.get("check_state_version") or game.get("player_state_version", 1)),
             modifiers=modifiers, automatic=choice.get("automatic"),
         )
@@ -379,6 +426,146 @@ class AIService:
             return
         yield self.generate_event(template, game, location, narrate=True)["text"]
 
+    @staticmethod
+    def _json_object(text: str) -> dict[str, Any]:
+        cleaned = text.strip()
+        if cleaned.startswith("```"):
+            cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", cleaned, flags=re.I)
+        value = json.loads(cleaned)
+        if not isinstance(value, dict):
+            raise TypeError("AI结果不是JSON对象")
+        return value
+
+    def generate_scene_result(
+        self,
+        scene: dict[str, Any],
+        event: dict[str, Any],
+        choice: dict[str, Any],
+        game: dict[str, Any],
+        location: dict[str, Any],
+        outcome: dict[str, Any],
+        *,
+        revision_feedback: list[str] | None = None,
+    ) -> tuple[dict[str, Any] | None, str | None]:
+        """Let AI create the concrete local consequence after CheckEngine has ruled."""
+        if os.getenv("RUNETERRA_DISABLE_REMOTE_AI") == "1" or not self.remote_ai.configured:
+            return None, None
+        tier_rules = {
+            "critical": "必须产生明显超出预期但仍局限于现场的具体进展。",
+            "success": "必须产生能回答玩家目标的有效、具体进展。",
+            "partial": "必须同时产生具体进展与一个已经发生的代价或新风险。",
+            "failure": "不能达成核心目标，但必须产生一个具体的新情况；不得把失败伪装成成功。",
+        }
+        schema = {
+            "narrative": "第二人称、只写本轮实际发生的具体后果",
+            "factsAdded": ["本轮确认并可在下一轮引用的现场事实"],
+            "questionsAdded": ["由结果自然产生的新问题"],
+            "questionsResolved": ["从当前questions中被本轮明确回答的问题原文"],
+            "npcReactions": ["仅限在场人物的具体反应"],
+            "continueScene": True,
+            "suggestedClue": {"name": "可选；只有具体发现值得长期保留时提出", "ability": "可选能力", "bonus": 5, "targetTags": [], "actionTags": []},
+        }
+        try:
+            response = self.remote_ai.generate(
+                system=(
+                    "你是互动RPG的现场结果导演。程序已经完成检定，你只负责决定这个结果在当前现场具体造成了什么。"
+                    "严格输出一个JSON对象，不得输出成功率、掷骰、数值变化、Thread Stage、物品奖励或未授权英雄。"
+                    "必须引用SceneState中的具体人物、物件、事实与问题；禁止空泛总结、人生感悟和万能套话。"
+                    "questionsResolved只能逐字引用输入中的questions。suggestedClue只是建议，程序有权拒绝。"
+                ),
+                prompt=json.dumps({
+                    "sceneState": {key: scene.get(key) for key in ("id", "round", "actors", "objects", "facts", "questions", "lastAction", "lastResult")},
+                    "playerAction": {key: choice.get(key) for key in ("semanticAction", "goal", "approach", "actionTags", "targetTags")},
+                    "checkResult": {key: outcome.get(key) for key in ("code", "label", "attribute_label", "risk")},
+                    "tierRule": tier_rules[outcome["code"]],
+                    "hardFacts": (event.get("eventContext") or {}).get("hardFacts", []),
+                    "forbiddenChanges": (event.get("eventContext") or {}).get("forbiddenChanges", []) + [
+                        "不得修改世界线程阶段、关系数值、能力值、伤势数值或物品归属",
+                        "不得让未在SceneState.actors中的英雄突然出现",
+                        "不得杀死受保护角色",
+                    ],
+                    "revisionFeedback": revision_feedback or [],
+                    "outputSchema": schema,
+                    "location": location["name"],
+                    "playerName": game["player"]["name"],
+                }, ensure_ascii=False),
+                temperature=0.7,
+                max_tokens=900,
+            )
+            return self._json_object(response["text"]), response["text"]
+        except (DeepSeekError, json.JSONDecodeError, TypeError, KeyError) as exc:
+            return None, str(exc)
+
+    @staticmethod
+    def fallback_scene_result(
+        scene: dict[str, Any], choice: dict[str, Any], outcome: dict[str, Any], location: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Concrete, scene-aware offline result; it may continue instead of forcing closure."""
+        action = choice.get("semanticAction", choice.get("text", "处理现场"))
+        goal = choice.get("goal", "弄清眼前的变化")
+        target = (choice.get("targetTags") or scene.get("objects") or ["现场的关键处"])[0]
+        actor = (scene.get("actors") or ["在场的人"])[0]
+        question = (scene.get("questions") or [f"{target}为何会出现这种变化？"])[0]
+        leaving = any(term in action for term in ("离开", "撤离", "不介入", "保持距离"))
+        facts_added: list[str] = []
+        questions_added: list[str] = []
+        questions_resolved: list[str] = []
+        reactions: list[str] = []
+        suggested_clue = None
+
+        if leaving:
+            narrative = f"你没有再靠近{target}，而是沿{location['name']}的来路退开。{actor}留在原处，现场的声响很快被距离压低；你保留了已经确认的事实，也明确放弃了此刻继续追查的机会。"
+            return {"narrative": narrative, "factsAdded": [], "questionsAdded": [], "questionsResolved": [], "npcReactions": [f"{actor}没有阻拦你离开。"], "continueScene": False, "suggestedClue": None}
+
+        if "铜钟" in target or "钟座" in target or any("铜钟" in fact for fact in scene.get("facts", [])):
+            discovery = "铜钟的震动来自钟座下方一道持续渗出冷气的狭窄缝隙"
+            next_question = "钟座下方的缝隙通向什么地方？"
+        elif any(term in f"{target}{action}{question}" for term in ("脚步", "竹林", "斥候")):
+            discovery = "靠近的两人穿着普通旅衣，但短刃制式与行进间距表明他们是诺克萨斯斥候"
+            next_question = "两名斥候正在沿山道寻找什么？"
+        else:
+            discovery = f"{target}靠近地面的一侧留着一组新鲜痕迹，方向与周围较旧的痕迹相反"
+            next_question = f"是谁在不久前改变了{target}附近的痕迹？"
+
+        code = outcome["code"]
+        if code in {"critical", "success", "partial"}:
+            facts_added.append(discovery)
+            questions_resolved.append(question)
+            questions_added.append(next_question)
+            suggested_clue = {
+                "name": f"关于{target}的新发现", "ability": choice.get("attribute", "perception"), "bonus": 5,
+                "targetTags": list(dict.fromkeys(choice.get("targetTags", []) + [target])),
+                "actionTags": choice.get("actionTags", []),
+            }
+        if code == "critical":
+            second = f"{actor}确认这些痕迹刚刚出现，并指出了它们继续延伸的方向"
+            facts_added.append(second)
+            reactions.append(second)
+            narrative = f"你沿着{target}逐寸核对，很快排除了旧痕与雨水造成的误差。{discovery}。{actor}顺着你指出的位置重新查看，立即确认了痕迹延伸的方向。"
+        elif code == "success":
+            reactions.append(f"{actor}按你的判断重新查看{target}，确认这不是原先就有的痕迹。")
+            narrative = f"你围绕“{goal}”检查{target}，把新旧痕迹逐一分开。{discovery}。{actor}随后亲自核对了你指出的位置，现场第一次有了可以继续追查的明确方向。"
+        elif code == "partial":
+            risk = f"{actor}核对时碰落一块碎片，声响惊动了附近尚未现身的人"
+            reactions.append(risk)
+            questions_added.append("刚才的声响惊动了谁？")
+            narrative = f"你确认了一个足以推进调查的事实：{discovery}。但在{actor}俯身核对时，一块碎片突然落下，清脆的声响传出很远；远处随即出现了短促而急促的脚步回应。"
+        else:
+            questions_added.append(next_question)
+            reactions.append(f"{actor}因你的动作后退一步，不再允许任何人继续靠近{target}。")
+            narrative = f"你试图通过{action}来{goal}，但{target}表面的新痕被松动的泥水覆盖，最关键的位置没能看清。{actor}被突然的变化惊得后退，现场随即被隔开；原来的问题没有得到答案，继续靠近也比刚才更困难。"
+
+        continue_scene = scene.get("round", 1) < scene.get("maxRounds", 4)
+        return {
+            "narrative": narrative,
+            "factsAdded": facts_added,
+            "questionsAdded": list(dict.fromkeys(questions_added)),
+            "questionsResolved": list(dict.fromkeys(questions_resolved)),
+            "npcReactions": reactions,
+            "continueScene": continue_scene,
+            "suggestedClue": suggested_clue,
+        }
+
     def generate_resolution(
         self,
         event: dict[str, Any],
@@ -393,7 +580,7 @@ class AIService:
         reflections = {
             "日常": "事情没有惊动更远处的人，可生活正是被这些无人歌颂的选择缓慢改变。",
             "探索": "你重新看向来路，熟悉的地形已经有了不同意义。未知并未减少，只是从恐惧变成了可以追索的线索。",
-            "成长": "改变并不剧烈，却真实地留在呼吸与动作之间。下一次面对相似局面时，你知道自己不会再是原来的自己。",
+            "成长": "你重新完成了一遍刚才的动作，身体已经记住最容易出错的位置。",
             "NPC": "对方没有立刻说出所有想法，但停留在你身上的目光已经不同。人与人的关系，往往在话语结束后才真正开始变化。",
             "命运": "风从你身侧越过，像翻动一本看不见的书。某种尚未成形的未来因此变得更近，也有另一些道路悄然远去。",
             "战斗": "当急促的呼吸逐渐平复，你才重新听见周围的风声。胜负只是结果，身体记住的恐惧与判断才是这场交锋留下的东西。",
@@ -403,7 +590,7 @@ class AIService:
             if outcome["code"] == "critical":
                 text += f"\n\n{consequence} 你的判断与行动几乎没有留下破绽，局面比预想中更彻底地向你倾斜。"
             elif outcome["code"] == "success":
-                text += f"\n\n{consequence} 过程并不轻松，但结果回应了你的判断。"
+                text += f"\n\n{consequence}"
             elif outcome["code"] == "partial":
                 text += f"\n\n{consequence}\n\n{outcome['setback_text']}"
             else:
@@ -439,8 +626,7 @@ class AIService:
         if world_feedback and world_feedback.get("newPlayableSituation"):
             text += f"\n\n{world_feedback['newPlayableSituation']}这不是对失败的补偿，而是它真正留下、之后仍需面对的麻烦。"
         text += f"\n\n{reflections.get(event['type'], reflections['探索'])}"
-        text += f" 此刻的{location['name']}看起来与片刻前没有区别，但你的道路已经留下新的偏转。"
-        text += " 你把当时的声音、气味与每一个迟疑都记了下来，因为未来的某次相逢，或许会要求你再次回答今天的问题。"
+        text += f" 此刻，{location['name']}里与这次行动直接相关的人和物都已经有了新的位置。"
         required_outcome = []
         if outcome:
             required_outcome.append(f"结果档位必须表现为：{outcome['label']}")
