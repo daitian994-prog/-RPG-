@@ -471,6 +471,8 @@ class AIService:
             },
             "suggestedClue": {"name": "可选；只有具体发现值得长期保留时提出", "ability": "可选能力", "bonus": 5, "targetTags": [], "actionTags": []},
             "suggestedLead": {"title": "可选；由本轮事实自然指向的下一件可追踪事项", "summary": "具体已知信息", "relatedLocations": ["war_ruins"], "threadId": "相关现有WorldThread"},
+            "leadDisposition": "KEEP_ACTIVE | RESOLVED | SUPERSEDED",
+            "leadResolutionSummary": "可选；仅在RESOLVED或SUPERSEDED时，用一句话说明玩家已经查明了什么",
         }
         try:
             response = self.remote_ai.generate(
@@ -479,6 +481,8 @@ class AIService:
                     "严格输出一个JSON对象，不得输出成功率、掷骰、数值变化、Thread Stage、物品奖励或未授权英雄。"
                     "必须引用SceneState中的具体人物、物件、事实与问题；禁止空泛总结、人生感悟和万能套话。"
                     "questionsResolved只能逐字引用输入中的questions。suggestedClue与suggestedLead都只是建议，程序会验证WorldThread、地点和现场关联后决定是否写入。"
+                    "若玩家正在追踪Lead，每轮都要返回leadDisposition：问题仍可在原方向继续追查时KEEP_ACTIVE；已经得到足够结论时RESOLVED；只有产生了更具体且取代原方向的新Lead时才SUPERSEDED。"
+                    "RESOLVED或SUPERSEDED只允许在Scene自然结束时提出，不能因为出现任意新Lead就关闭旧Lead。"
                     "每轮必须返回sceneDecision。不要按轮数决定是否继续；只判断当前是否还有必须现在处理且能产生不同决策的问题。"
                     "长期线索不必延长Scene；核心问题已解决且没有即时后果时必须结束。继续时nextFocus必须具体。"
                     "新问题只能来自现场已有的人物、物件、行为、地点或相关World Context的自然后果，不得凭空加入陌生神秘人、组织、神器、敌人、英雄或世界危机。"
@@ -536,6 +540,7 @@ class AIService:
                 "sceneDecision": {"continueScene": False, "reason": "玩家明确离开现场，当前介入已经结束。", "nextFocus": ""},
                 "continueScene": False, "suggestedClue": None,
                 "suggestedLead": None,
+                "leadDisposition": "KEEP_ACTIVE", "leadResolutionSummary": "",
             }
 
         current_focus = str(scene.get("currentFocus") or question)
@@ -628,6 +633,7 @@ class AIService:
             "continueScene": continue_scene,
             "suggestedClue": suggested_clue,
             "suggestedLead": None,
+            "leadDisposition": "KEEP_ACTIVE", "leadResolutionSummary": "",
         }
 
     def generate_resolution(

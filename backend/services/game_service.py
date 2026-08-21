@@ -39,6 +39,8 @@ FINALE_EVENTS = {
 }
 OPENING_LEAD_ID = "lead-unfamiliar-footprints"
 FOLLOW_UP_LEAD_ID = "lead-old-military-road"
+ACTIVE_LEAD_STATUS = "active"
+INACTIVE_LEAD_STATUSES = {"resolved", "superseded"}
 CORE_ABILITY_KEYS = ("martial", "physique", "perception", "willpower", "agility", "social")
 LEGACY_CORE_KEY_MAP = {"attunement": "perception", "resolve": "willpower", "finesse": "agility", "influence": "social"}
 BODY_CONDITIONS = {
@@ -182,7 +184,7 @@ class GameService:
             "trackable": True,
             "relatedLocations": ["windbreak"],
             "sourceType": "world_signal",
-            "status": "known",
+            "status": ACTIVE_LEAD_STATUS,
             "threadId": "noxian_remnants",
             "isNew": True,
             "focused": False,
@@ -190,6 +192,8 @@ class GameService:
 
     @staticmethod
     def _add_journal_entry(state: dict[str, Any], entry: dict[str, Any]) -> dict[str, Any] | None:
+        if entry.get("trackable"):
+            entry["status"] = entry.get("status") if entry.get("status") in {ACTIVE_LEAD_STATUS, *INACTIVE_LEAD_STATUSES} else ACTIVE_LEAD_STATUS
         journal = state.setdefault("journal", [])
         existing = next((item for item in journal if item.get("id") == entry.get("id")), None)
         if existing:
@@ -327,6 +331,25 @@ class GameService:
         if "journal" not in state:
             state["journal"] = []
             changed = True
+        follow_up_sources = {item.get("sourceLeadId") for item in state["journal"] if item.get("trackable")}
+        for item in state["journal"]:
+            if not item.get("trackable"):
+                continue
+            old_status = item.get("status")
+            if old_status in {ACTIVE_LEAD_STATUS, *INACTIVE_LEAD_STATUSES}:
+                continue
+            if old_status == "confirmed":
+                item["status"] = "superseded" if item.get("id") in follow_up_sources else "resolved"
+                item["previousSummary"] = item.get("previousSummary", item.get("summary"))
+                replacement = next((lead for lead in state["journal"] if lead.get("sourceLeadId") == item.get("id")), None)
+                conclusion = f"这一阶段已形成结论，后续调查已转向“{replacement['title']}”。" if replacement else "这一阶段已经形成足够结论。"
+                item["resolutionSummary"] = item.get("resolutionSummary", conclusion)
+                item["summary"] = f"已追查：{item['resolutionSummary']}" if replacement else f"已查明：{item['resolutionSummary']}"
+            elif old_status == "closed":
+                item["status"] = "resolved"
+            else:
+                item["status"] = ACTIVE_LEAD_STATUS
+            changed = True
         if "openingComplete" not in state:
             state["openingComplete"] = True
             changed = True
@@ -335,6 +358,12 @@ class GameService:
             changed = True
         if "playerIntent" not in state:
             state["playerIntent"] = {"kind": "free_exploration", "summary": "自由探索"}
+            changed = True
+        elif state["playerIntent"].get("kind") == "track_lead" and not any(
+            item.get("id") == state["playerIntent"].get("leadId") and item.get("trackable") and item.get("status") == ACTIVE_LEAD_STATUS
+            for item in state["journal"]
+        ):
+            state["playerIntent"] = {"kind": "free_exploration", "summary": "上一项调查已收束，等待选择新的行动方向"}
             changed = True
         if state.get("scene") is None and state.get("pendingEvent", {}).get("template", {}).get("dynamic"):
             pending = state.pop("pendingEvent")
@@ -558,11 +587,10 @@ class GameService:
             raise ValueError("未知地点")
         lead = None
         if lead_id:
-            lead = next((item for item in state.get("journal", []) if item.get("id") == lead_id and item.get("trackable")), None)
+            lead = next((item for item in state.get("journal", []) if item.get("id") == lead_id and item.get("trackable") and item.get("status") == ACTIVE_LEAD_STATUS), None)
             if not lead or location_id not in lead.get("relatedLocations", []):
                 raise ValueError("这条已知信息与当前地点没有可靠关联")
             lead["isNew"] = False
-            lead["status"] = "investigating"
             state["playerIntent"] = {
                 "kind": "track_lead", "leadId": lead["id"], "title": lead["title"],
                 "summary": lead["summary"], "relatedLocations": lead["relatedLocations"],
@@ -835,7 +863,7 @@ class GameService:
         self, state: dict[str, Any], event_id: str, event: dict[str, Any], scene: dict[str, Any] | None,
         ai_result: dict[str, Any] | None, outcome: dict[str, Any], granted_clues: list[dict[str, Any]],
     ) -> dict[str, list[dict[str, Any]]]:
-        feedback: dict[str, list[dict[str, Any]]] = {"discoveries": [], "mapUpdates": []}
+        feedback: dict[str, list[dict[str, Any]]] = {"discoveries": [], "mapUpdates": [], "leadUpdates": []}
         if not scene or not ai_result:
             return feedback
         fact_source = ai_result.get("factsAdded") or scene.get("facts", [])
@@ -858,7 +886,7 @@ class GameService:
                 "id": "lead-" + hashlib.sha256(f"{event_id}:{proposed['title']}".encode()).hexdigest()[:12],
                 "kind": "lead", "title": proposed["title"], "summary": proposed["summary"],
                 "trackable": True, "relatedLocations": proposed["relatedLocations"],
-                "sourceType": "scene_result", "status": "known", "threadId": proposed["threadId"],
+                "sourceType": "scene_result", "status": ACTIVE_LEAD_STATUS, "threadId": proposed["threadId"],
                 "sourceLeadId": intent.get("leadId"), "isNew": True, "focused": False,
             }
         # The first Demo hand-off is a stable functional relationship; the concrete Scene prose remains dynamic.
@@ -868,12 +896,9 @@ class GameService:
                 "id": FOLLOW_UP_LEAD_ID, "kind": "lead", "title": "旧军道近期有人活动",
                 "summary": certainty + "方向与通往战争遗迹的旧军道一致。",
                 "trackable": True, "relatedLocations": ["war_ruins"], "sourceType": "scene_result",
-                "status": "known", "threadId": "noxian_remnants", "sourceLeadId": OPENING_LEAD_ID,
+                "status": ACTIVE_LEAD_STATUS, "threadId": "noxian_remnants", "sourceLeadId": OPENING_LEAD_ID,
                 "isNew": True, "focused": False,
             }
-            original = next((item for item in state.get("journal", []) if item.get("id") == OPENING_LEAD_ID), None)
-            if original:
-                original["status"] = "confirmed"
             if "clue-human-activity" not in {item.get("id") for item in state["player"].get("clues", [])}:
                 clue = {
                     "id": "clue-human-activity", "name": "穿靴者的人类活动痕迹",
@@ -888,6 +913,29 @@ class GameService:
                 granted_clues.append(clue)
         if lead and self._add_journal_entry(state, lead):
             feedback["mapUpdates"].append(lead)
+        current_lead = next((item for item in state.get("journal", []) if item.get("id") == intent.get("leadId") and item.get("trackable") and item.get("status") == ACTIVE_LEAD_STATUS), None)
+        disposition = str(ai_result.get("leadDisposition", "KEEP_ACTIVE")).upper()
+        if intent.get("leadId") == OPENING_LEAD_ID and lead and lead.get("id") == FOLLOW_UP_LEAD_ID:
+            disposition = "SUPERSEDED"
+        if current_lead and disposition in {"RESOLVED", "SUPERSEDED"}:
+            first_fact = facts[0] if facts else ai_result.get("leadResolutionSummary") or current_lead["summary"]
+            if disposition == "SUPERSEDED" and lead:
+                conclusion = "你确认这些痕迹来自人类，进一步方向指向战争遗迹。" if current_lead.get("id") == OPENING_LEAD_ID else f"{first_fact}。后续调查已经转向“{lead['title']}”。"
+                prefix = "已追查"
+            else:
+                conclusion = str(ai_result.get("leadResolutionSummary") or first_fact).rstrip("。") + "。"
+                prefix = "已查明"
+            current_lead["previousSummary"] = current_lead.get("previousSummary", current_lead.get("summary"))
+            current_lead["resolutionSummary"] = conclusion
+            current_lead["summary"] = f"{prefix}：{conclusion}"
+            current_lead["status"] = disposition.lower()
+            current_lead["isNew"] = False
+            current_lead["focused"] = False
+            focus = state.get("directorState", {}).get("focus", [])
+            if current_lead["id"] in focus:
+                focus.remove(current_lead["id"])
+            state["playerIntent"] = {"kind": "free_exploration", "summary": "上一项调查已经收束，等待选择新的行动方向"}
+            feedback["leadUpdates"].append(current_lead)
         return feedback
 
     def resolve(self, game_id: str, event_id: str, choice_index: int, choice_round: int | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -1126,6 +1174,7 @@ class GameService:
             "worldFeedback": world_feedback,
             "discoveries": journal_feedback["discoveries"],
             "mapUpdates": journal_feedback["mapUpdates"],
+            "leadUpdates": journal_feedback["leadUpdates"],
             "sceneRound": active_scene.get("lastResult", {}).get("round") if active_scene else None,
             "sceneEnded": scene_ended,
             "aiResult": ai_result,
@@ -1213,7 +1262,7 @@ class GameService:
     def focus_world_topic(self, game_id: str, topic_id: str, focused: bool) -> tuple[dict[str, Any], dict[str, Any]]:
         state = self.get(game_id)
         snapshot = self.outcomes.snapshot(state)
-        lead = next((item for item in state.get("journal", []) if item.get("id") == topic_id and item.get("trackable")), None)
+        lead = next((item for item in state.get("journal", []) if item.get("id") == topic_id and item.get("trackable") and item.get("status") == ACTIVE_LEAD_STATUS), None)
         if lead:
             lead["focused"] = focused
             focus = state["directorState"]["focus"]

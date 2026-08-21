@@ -100,13 +100,14 @@ function Status({ player, game, busy, onInterveneThread, onFocusWorldTopic }) {
 }
 
 function Journal({ entries, busy, onFocus }) {
-  const focused = entries.filter(item => item.trackable && item.focused)
+  const focused = entries.filter(item => item.trackable && item.status === 'active' && item.focused)
   const discoveries = entries.filter(item => item.kind === 'discovery').slice(-5).reverse()
-  const leads = entries.filter(item => item.trackable && !item.focused)
-  return <section className="journal-sections"><h4>正在关注 <small>会提高地图与相关现场的优先度</small></h4><div>{focused.length ? focused.map(item=><JournalEntry key={item.id} item={item} busy={busy} onFocus={onFocus}/>) : <small>你还没有主动关注某件事</small>}</div><h4>当前可追踪 <small>你已知、值得继续追的方向</small></h4><div>{leads.length ? leads.map(item=><JournalEntry key={item.id} item={item} busy={busy} onFocus={onFocus}/>) : <small>暂时没有明确方向</small>}</div><h4>新发现 <small>最近在现场确认的事情</small></h4><div>{discoveries.length ? discoveries.map(item=><article key={item.id}><b>{item.title}</b><p>{item.summary}</p></article>) : <small>还没有新的现场发现</small>}</div></section>
+  const leads = entries.filter(item => item.trackable && item.status === 'active' && !item.focused)
+  const history = entries.filter(item => item.trackable && ['resolved','superseded'].includes(item.status)).slice().reverse()
+  return <section className="journal-sections"><h4>正在关注 <small>会提高地图与相关现场的优先度</small></h4><div>{focused.length ? focused.map(item=><JournalEntry key={item.id} item={item} busy={busy} onFocus={onFocus}/>) : <small>你还没有主动关注某件事</small>}</div><h4>当前可追踪 <small>你已知、值得继续追的方向</small></h4><div>{leads.length ? leads.map(item=><JournalEntry key={item.id} item={item} busy={busy} onFocus={onFocus}/>) : <small>暂时没有明确方向</small>}</div><h4>已追查 <small>已形成结论或转向更具体方向</small></h4><div>{history.length ? history.map(item=><JournalEntry key={item.id} item={item} busy={busy} onFocus={onFocus}/>) : <small>还没有已收束的调查</small>}</div><h4>新发现 <small>最近在现场确认的事情</small></h4><div>{discoveries.length ? discoveries.map(item=><article key={item.id}><b>{item.title}</b><p>{item.summary}</p></article>) : <small>还没有新的现场发现</small>}</div></section>
 }
 
-function JournalEntry({ item, busy, onFocus }) { return <article className={item.isNew?'new':''}><header><b>{item.title}</b>{item.isNew && <em>NEW</em>}</header><p>{item.summary}</p><footer><span>相关地点 · {item.relatedLocations?.join(' / ')}</span><button disabled={busy} onClick={()=>onFocus(item.id,!item.focused)}>{item.focused?'取消关注':'设为关注'}</button></footer></article> }
+function JournalEntry({ item, busy, onFocus }) { const active=item.status==='active'; return <article className={item.isNew?'new':''}><header><b>{item.title}</b>{item.isNew && active && <em>NEW</em>}{!active && <em>{item.status==='superseded'?'已转向':'已查明'}</em>}</header><p>{item.summary}</p><footer><span>相关地点 · {item.relatedLocations?.join(' / ')}</span>{active && <button disabled={busy} onClick={()=>onFocus(item.id,!item.focused)}>{item.focused?'取消关注':'设为关注'}</button>}</footer></article> }
 
 function WorldSignals({ signals }) {
   const visible = signals.filter(signal => signal.observed || signal.forcedOpportunity)

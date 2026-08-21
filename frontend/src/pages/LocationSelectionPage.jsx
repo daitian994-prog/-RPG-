@@ -14,7 +14,7 @@ export default function LocationSelectionPage({ locations, journal, current, poi
   const remaining = Math.max(0, time.chapter_limit - time.total_actions)
   const inFinale = !chapterComplete && time.total_actions >= 12
   const finaleNext = {12:['mountain_temple','终章一 · 前往山寺平息灵界异象'],13:['war_ruins','终章二 · 赴战争遗迹与亚索会合'],14:['pallas','终章三 · 返回帕拉斯布置防线'],15:['pallas','终章四 · 迎战血旗督军']}[time.total_actions]
-  const leadsFor = locationId => journal.filter(item => item.trackable && item.status !== 'closed' && item.relatedLocations?.includes(locationId))
+  const leadsFor = locationId => journal.filter(item => item.trackable && item.status === 'active' && item.relatedLocations?.includes(locationId))
   return <div className="location-selection-page">
     <header className="location-selection-heading"><div><span>周边行程</span><h3>{inFinale ? '第一章终章' : '选择你为什么前往'}</h3><p>地点有稳定倾向，具体现场仍会动态发生</p></div><aside><b>{points}</b><span>次行动</span></aside><div className="journey-progress"><i><span style={{width:`${Math.min(100,time.total_actions / time.chapter_limit * 100)}%`}}/></i><em>{chapterComplete ? '第一章已经结束' : `一年之期 · 还剩 ${remaining} 次行动`}</em></div></header>
     {inFinale && finaleNext ? <section className="finale-next"><span>固定终章 · {time.total_actions - 11} / 4</span><b>{finaleNext[1]}</b><p>终章已经开始，自由行程暂时关闭。完成这一幕后才会进入下一段收尾。</p><button disabled={busy} onClick={()=>onTravel(finaleNext[0])}>继续终章</button></section> : <div className="location-card-list">{locations.map(location => <LocationCard key={location.id} location={location} leads={leadsFor(location.id)} current={location.id === current} disabled={busy || chapterComplete} onTravel={onTravel}/>)}</div>}

@@ -109,6 +109,8 @@ class OutcomeEngine:
             "nextFocus": str(result["sceneDecision"].get("nextFocus", "")).strip(),
         }
         result["continueScene"] = result["sceneDecision"]["continueScene"]
+        result["leadDisposition"] = str(result.get("leadDisposition", "KEEP_ACTIVE")).upper()
+        result["leadResolutionSummary"] = str(result.get("leadResolutionSummary", "")).strip()[:240]
         current_questions = set(scene.get("questions", []))
         invalid_resolved = [item for item in result["questionsResolved"] if item not in current_questions]
         if invalid_resolved:
@@ -200,6 +202,23 @@ class OutcomeEngine:
                     lead["summary"] = str(lead["summary"]).strip()[:240]
                     lead["relatedLocations"] = locations
                     lead["threadId"] = related_thread
+        disposition = result["leadDisposition"]
+        if disposition not in {"KEEP_ACTIVE", "RESOLVED", "SUPERSEDED"}:
+            errors.append("leadDisposition不是允许的生命周期状态")
+        if disposition != "KEEP_ACTIVE":
+            intent = state.get("playerIntent", {})
+            current_lead = next((item for item in state.get("journal", []) if item.get("id") == intent.get("leadId") and item.get("trackable") and item.get("status") == "active"), None)
+            if intent.get("kind") != "track_lead" or current_lead is None:
+                errors.append("没有可由本Scene关闭的active Lead")
+            elif result["sceneDecision"]["continueScene"]:
+                errors.append("Scene尚未结束，不能关闭当前Lead")
+            elif not (result["factsAdded"] or result["questionsResolved"]):
+                errors.append("关闭当前Lead缺少已确认事实或已回答问题")
+            elif disposition == "SUPERSEDED":
+                if lead is None:
+                    errors.append("SUPERSEDED必须提供接替当前目标的新Lead")
+                elif str(lead.get("title", "")).strip() == str(current_lead.get("title", "")).strip():
+                    errors.append("SUPERSEDED的新Lead不能只是重复当前目标")
         if errors:
             return None, {"valid": False, "errors": errors}
         return result, {"valid": True, "errors": []}

@@ -59,10 +59,18 @@ class EventContextService:
             hard_facts.append(f"本次允许涉及的原生英雄仅限{hero_name}，其当前目标固定为：{hero_goal}")
         required_elements: list[str] = []
         player_intent = state.get("playerIntent", {"kind": "free_exploration", "summary": f"自由探索{location['name']}"})
+        active_lead_ids = {item.get("id") for item in state.get("journal", []) if item.get("trackable") and item.get("status") == "active"}
+        if player_intent.get("kind") == "track_lead" and player_intent.get("leadId") not in active_lead_ids:
+            player_intent = {"kind": "free_exploration", "summary": f"自由探索{location['name']}"}
         related_leads = [
-            {key: item.get(key) for key in ("id", "title", "summary", "relatedLocations", "threadId", "focused")}
+            {key: item.get(key) for key in ("id", "title", "summary", "relatedLocations", "threadId", "focused", "status")}
             for item in state.get("journal", [])
-            if item.get("trackable") and location["id"] in item.get("relatedLocations", []) and item.get("status") != "closed"
+            if item.get("trackable") and location["id"] in item.get("relatedLocations", []) and item.get("status") == "active"
+        ]
+        lead_history = [
+            {key: item.get(key) for key in ("id", "title", "summary", "resolutionSummary", "relatedLocations", "threadId", "status")}
+            for item in state.get("journal", [])
+            if item.get("trackable") and item.get("status") in {"resolved", "superseded"}
         ]
         if player_intent.get("kind") == "track_lead":
             hard_facts.append(f"玩家本次明确为了追查“{player_intent.get('title')}”来到这里：{player_intent.get('summary')}")
@@ -96,6 +104,7 @@ class EventContextService:
             "playerIntent": player_intent,
             "playerFocus": [item for item in related_leads if item.get("focused")],
             "trackableLeads": related_leads,
+            "leadHistory": lead_history,
             "locationProfile": {
                 "playstyle": location.get("playstyle"), "risk": location.get("risk"),
                 "expectation": location.get("expectation"), "feedbackTypes": location.get("feedbackTypes", []),

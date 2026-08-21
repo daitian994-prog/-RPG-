@@ -143,6 +143,11 @@ class EventDirectorService:
             if candidate.get("threadResolved"):
                 urgency *= 0.55
         intent = state.get("playerIntent", {})
+        if intent.get("kind") == "track_lead" and not any(
+            item.get("id") == intent.get("leadId") and item.get("trackable") and item.get("status") == "active"
+            for item in state.get("journal", [])
+        ):
+            intent = {}
         intent_thread = intent.get("threadId") if intent.get("kind") == "track_lead" else None
         focus = 1.25 if candidate.get("threadId") in director.get("focus", []) else 1.0
         intent_match = 2.35 if intent_thread and candidate.get("threadId") == intent_thread else 0.55 if intent_thread else 1.0

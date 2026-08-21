@@ -1,5 +1,14 @@
 # 更新记录
 
+## 0.7.0 — 2026-08-21
+
+- 在现有 Journal / Trackable Lead 数据中加入 `active` / `resolved` / `superseded` 三态生命周期，并自动迁移旧存档的 `known` / `investigating` / `confirmed` / `closed` 状态。
+- Scene 结果 AI 可提出 `KEEP_ACTIVE` / `RESOLVED` / `SUPERSEDED`；程序仅在 Scene 已自然收束、已有事实或问题结论，且 `SUPERSEDED` 存在有效替代 Lead 时才接受状态变更。
+- 完成“不像野兽的脚印”后，旧 Lead 会转为 `superseded` 并记录已追查结论；战争遗迹的“旧军道近期有人活动”作为新 `active` Lead 接替调查方向。
+- 地点卡和“当前可追踪”仅显示 `active` Lead；历史 Lead 保留在日志的“已追查”区域，不再允许关注或再次作为旅行目标。
+- EventContext 的 `playerIntent` / `playerFocus` / `trackableLeads` 仅允许引用 `active` Lead；`resolved` / `superseded` 仅通过 `leadHistory` 作为玩家历史知识，不再驱动 Scene 与 Action 生成。
+- 新增 Lead 生命周期、旧存档迁移、非自动关闭、无效替代验证和 Context 隔离回归，后端测试增至 108 项。
+
 ## 0.6.1 — 2026-08-21
 
 - 将地点卡片的四张旧场景图分别替换为新的帕拉斯山村、断风森林、战争遗迹和山间寺庙图片，保持 240px 固定裁切区和原有卡片交互不变。

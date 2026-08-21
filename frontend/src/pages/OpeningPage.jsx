@@ -1,7 +1,7 @@
 import { Compass, MapPin, Scroll } from 'lucide-react'
 
 export default function OpeningPage({ opening, journal, busy, onContinue }) {
-  const lead = journal.find(item => item.trackable)
+  const lead = journal.find(item => item.trackable && item.status === 'active')
   return <main className="opening-page page-enter">
     <div className="opening-art"><div className="opening-lantern"/><span>帕拉斯 · 初夜</span></div>
     <section>

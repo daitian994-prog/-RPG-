@@ -95,6 +95,33 @@ class ClosedLoopTest(unittest.TestCase):
         self.assertEqual(len(self.state["stateChangeLog"]), 50)
         self.assertTrue(self.state["stateChangeLog"][-1]["changes"])
 
+    def test_lead_disposition_requires_scene_closure_and_valid_replacement(self):
+        current = {
+            "id": "lead-a", "title": "不明脚印", "summary": "林中有不明脚印", "trackable": True,
+            "status": "active", "relatedLocations": ["windbreak"], "threadId": "noxian_remnants",
+        }
+        self.state["journal"] = [current]
+        self.state["playerIntent"] = {"kind": "track_lead", "leadId": "lead-a", "threadId": "noxian_remnants"}
+        scene = {"questions": ["脚印由谁留下？"], "facts": [], "actors": [], "objects": ["脚印"]}
+        outcome = {"code": "success"}
+        choice = {"semanticAction": "检查脚印", "attribute": "perception", "result": {}}
+        base = {
+            "narrative": "你逐一比对脚印的深浅和步幅，确认它们来自穿着靴子的人类，并且沿着旧军道离开了森林。",
+            "factsAdded": ["脚印来自人类"], "questionsAdded": [], "questionsResolved": ["脚印由谁留下？"],
+            "npcReactions": [], "sceneDecision": {"continueScene": False, "reason": "原问题已经回答。", "nextFocus": ""},
+            "suggestedClue": None, "suggestedLead": None,
+        }
+        resolved, debug = self.outcomes.validate_ai_result(
+            {**base, "leadDisposition": "RESOLVED"}, scene, outcome, choice, {"threadId": "noxian_remnants"}, self.state,
+        )
+        self.assertTrue(debug["valid"])
+        self.assertEqual(resolved["leadDisposition"], "RESOLVED")
+        rejected, debug = self.outcomes.validate_ai_result(
+            {**base, "leadDisposition": "SUPERSEDED"}, scene, outcome, choice, {"threadId": "noxian_remnants"}, self.state,
+        )
+        self.assertIsNone(rejected)
+        self.assertTrue(any("SUPERSEDED" in item for item in debug["errors"]))
+
     def test_three_builds_and_probability_calibration(self):
         engine = CheckEngine()
         builds = {"martial": 11, "perception": 11, "agility": 11}
