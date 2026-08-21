@@ -470,6 +470,7 @@ class AIService:
                 "nextFocus": "继续时必填；下一轮真正围绕的即时对象或问题",
             },
             "suggestedClue": {"name": "可选；只有具体发现值得长期保留时提出", "ability": "可选能力", "bonus": 5, "targetTags": [], "actionTags": []},
+            "suggestedLead": {"title": "可选；由本轮事实自然指向的下一件可追踪事项", "summary": "具体已知信息", "relatedLocations": ["war_ruins"], "threadId": "相关现有WorldThread"},
         }
         try:
             response = self.remote_ai.generate(
@@ -477,7 +478,7 @@ class AIService:
                     "你是互动RPG的现场结果导演。程序已经完成检定，你只负责决定这个结果在当前现场具体造成了什么。"
                     "严格输出一个JSON对象，不得输出成功率、掷骰、数值变化、Thread Stage、物品奖励或未授权英雄。"
                     "必须引用SceneState中的具体人物、物件、事实与问题；禁止空泛总结、人生感悟和万能套话。"
-                    "questionsResolved只能逐字引用输入中的questions。suggestedClue只是建议，程序有权拒绝。"
+                    "questionsResolved只能逐字引用输入中的questions。suggestedClue与suggestedLead都只是建议，程序会验证WorldThread、地点和现场关联后决定是否写入。"
                     "每轮必须返回sceneDecision。不要按轮数决定是否继续；只判断当前是否还有必须现在处理且能产生不同决策的问题。"
                     "长期线索不必延长Scene；核心问题已解决且没有即时后果时必须结束。继续时nextFocus必须具体。"
                     "新问题只能来自现场已有的人物、物件、行为、地点或相关World Context的自然后果，不得凭空加入陌生神秘人、组织、神器、敌人、英雄或世界危机。"
@@ -534,6 +535,7 @@ class AIService:
                 "npcReactions": [f"{actor}没有阻拦你离开。"], "actorsAdded": [], "objectsAdded": [],
                 "sceneDecision": {"continueScene": False, "reason": "玩家明确离开现场，当前介入已经结束。", "nextFocus": ""},
                 "continueScene": False, "suggestedClue": None,
+                "suggestedLead": None,
             }
 
         current_focus = str(scene.get("currentFocus") or question)
@@ -625,6 +627,7 @@ class AIService:
             "sceneDecision": {"continueScene": continue_scene, "reason": reason, "nextFocus": next_focus},
             "continueScene": continue_scene,
             "suggestedClue": suggested_clue,
+            "suggestedLead": None,
         }
 
     def generate_resolution(
@@ -750,10 +753,11 @@ class AIService:
                 "你抓住呼吸之间的空隙，借势卸开兵刃。胜负已经分明。",
                 "灵息沿着脚下的根系回应你。下一击落下时，对手失去了战意。",
             ]
-            return endings[choice]
-        failures = [
-            "你的攻击无法突破敌人的防御。长时间的缠斗让你的脚步渐沉，只能暂时撤离。",
-            "敌人的力量超过了你的承受能力。你借倒塌的石墙掩护，才从锋芒下脱身。",
-            "你的技巧连续性不足，对手抓住了换气的间隙。好在林雾替你遮住了退路。",
-        ]
+        else:
+            endings = [
+                "你的攻击无法突破敌人的防御。长时间的缠斗让你的脚步渐沉，只能暂时撤离。",
+                "敌人的力量超过了你的承受能力。你借倒塌的石墙掩护，才从锋芒下脱身。",
+                "你的技巧连续性不足，对手抓住了换气的间隙。好在林雾替你遮住了退路。",
+            ]
+        return endings[choice % len(endings)]
         return failures[choice]

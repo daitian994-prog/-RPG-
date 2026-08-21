@@ -5,7 +5,7 @@ import os
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
-from backend.models.schemas import ChoiceRequest, DialogueRequest, EventNarrativeRequest, NewGameRequest, RecoveryRequest, TravelRequest, WorldFocusRequest, WorldThreadInterventionRequest
+from backend.models.schemas import ChoiceRequest, DialogueRequest, EventNarrativeRequest, NewGameRequest, OpeningRequest, RecoveryRequest, TravelRequest, WorldFocusRequest, WorldThreadInterventionRequest
 from backend.services.game_service import GameService
 from backend.services.public_view_service import PublicViewService
 
@@ -49,10 +49,19 @@ def get_game(game_id: str, debug: bool = False):
         raise HTTPException(404, str(exc)) from exc
 
 
+@router.post("/opening/complete")
+def complete_opening(payload: OpeningRequest, debug: bool = False):
+    try:
+        game = service.complete_opening(payload.game_id)
+        return {"game": public_views.game(game, debug=_debug_allowed(debug))}
+    except (KeyError, ValueError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
 @router.post("/travel")
 def travel(payload: TravelRequest, debug: bool = False):
     try:
-        game, event = service.travel(payload.game_id, payload.location_id)
+        game, event = service.travel(payload.game_id, payload.location_id, lead_id=payload.lead_id)
         enabled = _debug_allowed(debug)
         return {"game": public_views.game(game, debug=enabled), "event": public_views.event(event, debug=enabled)}
     except (KeyError, ValueError) as exc:
@@ -63,7 +72,7 @@ def travel(payload: TravelRequest, debug: bool = False):
 def prepare_travel(payload: TravelRequest, debug: bool = False):
     """L1: resolve world facts immediately; prose is streamed separately."""
     try:
-        game, event = service.travel(payload.game_id, payload.location_id, narrate=False)
+        game, event = service.travel(payload.game_id, payload.location_id, lead_id=payload.lead_id, narrate=False)
         enabled = _debug_allowed(debug)
         return {"game": public_views.game(game, debug=enabled), "event": public_views.event(event, debug=enabled)}
     except (KeyError, ValueError) as exc:

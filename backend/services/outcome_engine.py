@@ -179,6 +179,27 @@ class OutcomeEngine:
                 clue["actionTags"] = list(dict.fromkeys(str(item).strip() for item in clue.get("actionTags", []) if str(item).strip()))[:8]
                 clue["threadId"] = director.get("threadId")
                 clue["locationTags"] = [state.get("location")] if state.get("location") else []
+        lead = result.get("suggestedLead")
+        if lead is not None:
+            if not isinstance(lead, dict) or not str(lead.get("title", "")).strip() or not str(lead.get("summary", "")).strip():
+                errors.append("suggestedLead结构无效")
+            else:
+                allowed_locations = {"pallas", "windbreak", "war_ruins", "mountain_temple"}
+                locations = list(dict.fromkeys(str(item) for item in lead.get("relatedLocations", []) if str(item) in allowed_locations))
+                active_threads = {item.get("id") for item in state.get("worldState", {}).get("activeThreads", [])}
+                intent = state.get("playerIntent", {})
+                related_thread = lead.get("threadId") or director.get("threadId") or intent.get("threadId")
+                if not locations:
+                    errors.append("suggestedLead没有合理关联地点")
+                elif related_thread not in active_threads:
+                    errors.append("suggestedLead没有关联现有WorldThread")
+                elif related_thread not in {director.get("threadId"), intent.get("threadId")}:
+                    errors.append("suggestedLead与本次Scene缺少线程关联")
+                else:
+                    lead["title"] = str(lead["title"]).strip()[:80]
+                    lead["summary"] = str(lead["summary"]).strip()[:240]
+                    lead["relatedLocations"] = locations
+                    lead["threadId"] = related_thread
         if errors:
             return None, {"valid": False, "errors": errors}
         return result, {"valid": True, "errors": []}

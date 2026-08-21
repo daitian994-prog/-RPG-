@@ -10,6 +10,11 @@ class NewGameRequest(BaseModel):
 class TravelRequest(BaseModel):
     game_id: str
     location_id: str
+    lead_id: str | None = None
+
+
+class OpeningRequest(BaseModel):
+    game_id: str
 
 
 class EventNarrativeRequest(BaseModel):

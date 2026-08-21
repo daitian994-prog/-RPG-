@@ -58,6 +58,15 @@ class EventContextService:
             hero_goal = hero.get("currentGoal") or hero.get("runtime", {}).get("currentGoal", {}).get("summary")
             hard_facts.append(f"本次允许涉及的原生英雄仅限{hero_name}，其当前目标固定为：{hero_goal}")
         required_elements: list[str] = []
+        player_intent = state.get("playerIntent", {"kind": "free_exploration", "summary": f"自由探索{location['name']}"})
+        related_leads = [
+            {key: item.get(key) for key in ("id", "title", "summary", "relatedLocations", "threadId", "focused")}
+            for item in state.get("journal", [])
+            if item.get("trackable") and location["id"] in item.get("relatedLocations", []) and item.get("status") != "closed"
+        ]
+        if player_intent.get("kind") == "track_lead":
+            hard_facts.append(f"玩家本次明确为了追查“{player_intent.get('title')}”来到这里：{player_intent.get('summary')}")
+            required_elements.append("本Scene必须优先对玩家追查的事项产生进展、阻碍或新的相关信息；不得用无关日常事件取代它")
         encounter = hero_encounter or {"level": 0, "levelName": "none"}
         if encounter.get("level") == 1 and encounter.get("trace"):
             required_elements.append("现场必须自然出现这条英雄活动痕迹：" + encounter["trace"])
@@ -84,6 +93,13 @@ class EventContextService:
             },
             "selectedCandidate": candidate, "eventIntent": selection.get("intent"), "heroContext": hero,
             "heroEncounter": encounter,
+            "playerIntent": player_intent,
+            "playerFocus": [item for item in related_leads if item.get("focused")],
+            "trackableLeads": related_leads,
+            "locationProfile": {
+                "playstyle": location.get("playstyle"), "risk": location.get("risk"),
+                "expectation": location.get("expectation"), "feedbackTypes": location.get("feedbackTypes", []),
+            },
             "hardFacts": hard_facts,
             "requiredElements": required_elements,
             "forbiddenChanges": [

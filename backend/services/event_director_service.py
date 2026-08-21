@@ -142,7 +142,17 @@ class EventDirectorService:
             urgency = 0.80 + candidate.get("threadUrgency", 0) / 125
             if candidate.get("threadResolved"):
                 urgency *= 0.55
+        intent = state.get("playerIntent", {})
+        intent_thread = intent.get("threadId") if intent.get("kind") == "track_lead" else None
         focus = 1.25 if candidate.get("threadId") in director.get("focus", []) else 1.0
+        intent_match = 2.35 if intent_thread and candidate.get("threadId") == intent_thread else 0.55 if intent_thread else 1.0
+        location_biases = {
+            "pallas": {"personal": 1.30, "environment": 1.05},
+            "windbreak": {"environment": 1.30, "world_thread": 1.12},
+            "war_ruins": {"world_thread": 1.48, "hero": 1.10},
+            "mountain_temple": {"environment": 1.28, "personal": 1.10},
+        }
+        location_personality = location_biases.get(state.get("location"), {}).get(candidate.get("category"), 1.0)
         relevance = RELEVANCE.get(candidate.get("locationRelevance", "medium"), 1.0)
         tension = self._tension_modifier(director["tension"], candidate["intensity"])
         recent_factor = self._recent_modifier(candidate, recent)
@@ -155,6 +165,7 @@ class EventDirectorService:
             "threadStage": round(thread_stage, 4), "urgency": round(urgency, 4),
             "tension": round(tension, 4), "recentHistory": round(recent_factor, 4),
             "playerFocus": round(focus, 4), "worldRelevance": round(relevance, 4),
+            "playerIntent": round(intent_match, 4), "locationPersonality": round(location_personality, 4),
             "narrativeBudget": round(budget, 4), "randomFactor": round(random_factor, 4),
         }
         if candidate.get("heroId"):

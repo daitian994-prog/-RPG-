@@ -30,8 +30,9 @@ const streamNdjson = async (path, body, { signal, onMessage }) => {
 export const api = {
   world: () => request('/api/world'),
   newGame: answers => request('/api/games', { method: 'POST', body: JSON.stringify({ answers }) }),
-  travel: (gameId, locationId) => request('/api/travel', { method: 'POST', body: JSON.stringify({ game_id: gameId, location_id: locationId }) }),
-  prepareTravel: (gameId, locationId, signal) => request('/api/travel/prepare', { method: 'POST', body: JSON.stringify({ game_id: gameId, location_id: locationId }), signal }),
+  completeOpening: gameId => request('/api/opening/complete', { method: 'POST', body: JSON.stringify({ game_id: gameId }) }),
+  travel: (gameId, locationId, leadId = null) => request('/api/travel', { method: 'POST', body: JSON.stringify({ game_id: gameId, location_id: locationId, lead_id: leadId }) }),
+  prepareTravel: (gameId, locationId, leadId, signal) => request('/api/travel/prepare', { method: 'POST', body: JSON.stringify({ game_id: gameId, location_id: locationId, lead_id: leadId }), signal }),
   streamEvent: (gameId, eventId, options) => streamNdjson('/api/events/narrative-stream', { game_id: gameId, event_id: eventId }, options),
   choose: (gameId, eventId, choiceIndex, choiceRound) => request('/api/choices', { method: 'POST', body: JSON.stringify({ game_id: gameId, event_id: eventId, choice_index: choiceIndex, choice_round: choiceRound }) }),
   recover: (gameId, method = 'rest') => request('/api/recover', { method: 'POST', body: JSON.stringify({ game_id: gameId, method }) }),

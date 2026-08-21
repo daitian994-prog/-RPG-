@@ -66,6 +66,11 @@ class NarrativeAuthorityService:
         obj = components.get("object", "一处异常痕迹")
         setting = components.get("setting", envelope["location"]["name"])
         pressure = components.get("pressure", "留给判断的时间不多")
+        player_intent = envelope.get("playerIntent", {})
+        tracking_lead = player_intent.get("kind") == "track_lead"
+        if tracking_lead:
+            obj = player_intent.get("title", obj)
+            pressure = f"与“{player_intent.get('title')}”有关的痕迹正在被风和来往脚步覆盖"
         hero = envelope.get("heroContext")
         hero_name = (hero or {}).get("name") or (hero or {}).get("canon", {}).get("name", "亚索")
         encounter = envelope.get("heroEncounter", {})
@@ -95,6 +100,12 @@ class NarrativeAuthorityService:
             f"眼前的异常并没有安静留在原处：周围新留下的痕迹与在场人的说法互相矛盾，每当有人靠近，{pressure}。"
             f"{actor}几次想开口，又都先望向来路，显然还有一部分经过没有说出来。"
         )
+        if tracking_lead:
+            paragraph_two = (
+                f"你不是漫无目的来到{setting}。循着“{player_intent.get('title')}”的说法核对林缘后，"
+                f"你在{obj}附近看见了被落叶遮住的新痕；{actor}正守在那里，试图分清它与旧兽道的先后。"
+                f"每一次风动都在抹平边缘，{pressure}。"
+            )
         personality = envelope.get("playerSummary", {}).get("personality", {})
         dominant = max(personality, key=personality.get) if personality else "peace"
         player_reaction = {
@@ -114,12 +125,20 @@ class NarrativeAuthorityService:
         )
         scene = "\n\n".join((atmosphere, paragraph_two, paragraph_three, paragraph_four))
         actions = []
-        for choice in template.get("choices", []):
-            actions.append({
-                "semanticAction": choice.get("semanticAction", choice["text"]),
-                "goal": choice.get("goal", "处理眼前问题"), "approach": choice.get("approach", choice.get("hint", "谨慎行动")),
-                "expectedRiskType": choice.get("risk", "中"), "target": obj,
-            })
+        if tracking_lead:
+            actions = [
+                {"semanticAction":"沿新鲜脚印追查去向","goal":"确认留下痕迹的人去了哪里","approach":"比较步幅、泥土边缘与遮挡","expectedRiskType":"中","target":obj},
+                {"semanticAction":f"询问{actor}见过哪些相似足迹","goal":"确认痕迹是否属于本地人","approach":"核对猎人经验与巡路习惯","expectedRiskType":"低","target":actor},
+                {"semanticAction":"在背风处等待留下脚印的人返回","goal":"观察来者身份而不先暴露自己","approach":"利用地形隐蔽观察","expectedRiskType":"高","target":obj},
+                {"semanticAction":"记下方向并离开森林","goal":"保留现有发现并停止承担风险","approach":"主动结束介入","expectedRiskType":"低","target":obj},
+            ]
+        else:
+            for choice in template.get("choices", []):
+                actions.append({
+                    "semanticAction": choice.get("semanticAction", choice["text"]),
+                    "goal": choice.get("goal", "处理眼前问题"), "approach": choice.get("approach", choice.get("hint", "谨慎行动")),
+                    "expectedRiskType": choice.get("risk", "中"), "target": obj,
+                })
         return {
             "sceneTitle": template.get("title", "眼前的异样"), "sceneSummary": scene,
             "localActors": [actor] + ([hero_name] if hero and encounter.get("level", 0) >= 4 else []),

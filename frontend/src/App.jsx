@@ -4,6 +4,7 @@ import BirthPage from './pages/BirthPage'
 import GamePage from './pages/GamePage'
 import HomePage from './pages/HomePage'
 import PersonalityPage from './pages/PersonalityPage'
+import OpeningPage from './pages/OpeningPage'
 
 export default function App() {
   const [screen, setScreen] = useState('home')
@@ -33,7 +34,7 @@ export default function App() {
     catch (e) { setError(e.message) } finally { setBusy(false) }
   }
 
-  const travel = async locationId => {
+  const travel = async (locationId, leadId = null) => {
     if (eventState !== 'IDLE' && eventState !== 'COMPLETE' && eventState !== 'CHOICES_AVAILABLE') return
     requestRef.current.controller?.abort()
     const controller = new AbortController()
@@ -45,7 +46,7 @@ export default function App() {
     setEventState('PLAYER_ACTION'); setTransition(scene)
     requestAnimationFrame(() => setEventState('TRANSITION'))
     try {
-      const data = await api.prepareTravel(game.id, locationId, controller.signal)
+      const data = await api.prepareTravel(game.id, locationId, leadId, controller.signal)
       if (requestRef.current.id !== requestId) return
       const skeleton = { ...data.event, text: '', paragraphs: [], streaming: true }
       setGame(data.game); setEvent(skeleton); setTransition(null); setTab('story'); setEventState('STREAMING'); setBusy(false)
@@ -121,6 +122,13 @@ export default function App() {
     catch (e) { setError(e.message) } finally { setBusy(false) }
   }
 
+  const completeOpening = async () => {
+    if (busy) return
+    setBusy(true); setError('')
+    try { const data = await api.completeOpening(game.id); setGame(data.game); setTab('map'); setScreen('game') }
+    catch (e) { setError(e.message) } finally { setBusy(false) }
+  }
+
   const restartDemo = () => {
     requestRef.current.controller?.abort()
     setGame(null); setEvent(null); setResult(''); setAnswers([]); setStep(0); setTab('story')
@@ -130,7 +138,8 @@ export default function App() {
   return <div className="app-shell">
     {screen === 'home' && <HomePage onStart={() => setScreen('questions')}/>} 
     {screen === 'questions' && <PersonalityPage step={step} onAnswer={answer} onBack={() => step ? setStep(step-1) : setScreen('home')}/>} 
-    {screen === 'birth' && game && <BirthPage game={game} onContinue={() => setScreen('game')}/>}
+    {screen === 'birth' && game && <BirthPage game={game} onContinue={() => setScreen('opening')}/>}
+    {screen === 'opening' && game && <OpeningPage opening={game.opening} journal={game.journal || []} busy={busy} onContinue={completeOpening}/>}
     {screen === 'game' && game && world && <GamePage
       game={game} world={world} event={event} result={result} tab={tab} busy={busy} eventState={eventState}
       onTab={setTab} onTravel={travel} onRecover={recover} onInterveneThread={interveneThread}

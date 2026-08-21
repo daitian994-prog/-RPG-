@@ -17,7 +17,7 @@ export default function GamePage({ game, world, event, result, tab, busy, eventS
     <PlayerHeader game={game} location={location}/>
     <section className="game-content">
       {tab === 'story' && <Story game={game} location={location} result={result} npcs={world.npcs} onMap={() => onTab('map')} onRestart={onRestart}/>}
-      {tab === 'map' && <WorldMap locations={world.locations} mapPlaces={world.map_places || []} current={game.location} points={game.action_points} time={game.time} chapterComplete={game.chapter_complete} chapterPhase={game.chapter_phase} bodyCondition={game.player.bodyCondition} busy={busy} onTravel={onTravel} onRecover={onRecover}/>}
+      {tab === 'map' && <WorldMap locations={world.locations} mapPlaces={world.map_places || []} journal={game.journal || []} current={game.location} points={game.action_points} time={game.time} chapterComplete={game.chapter_complete} chapterPhase={game.chapter_phase} bodyCondition={game.player.bodyCondition} busy={busy} onTravel={onTravel} onRecover={onRecover}/>}
       {tab === 'people' && <People npcs={localNpcs} relationships={game.relationships} onDialogue={onDialogue}/>} 
       {tab === 'status' && <Status
         player={game.player} game={game} busy={busy}
@@ -74,6 +74,8 @@ function ResolutionPanel({ resolution, npcs }) {
     {resolution.missed_items?.length > 0 && <div className="missed-loot"><span>未能获得</span><b>{resolution.missed_items.join('、')}</b><p>这件物品随失败的机会一同离开，未来或许还有其他取得方式。</p></div>}
     {resolution.worldFeedback?.worldChanged && <div className="world-feedback"><span>这件事改变了附近正在发展的局势</span>{resolution.worldFeedback.newPlayableSituation && <p>{resolution.worldFeedback.newPlayableSituation}</p>}</div>}
     {resolution.worldFeedback?.heroChanged && <div className="world-feedback"><span>这次相逢改变了对方对你的看法</span></div>}
+    {resolution.discoveries?.length > 0 && <div className="world-response"><span>你确认了一件事</span>{resolution.discoveries.map(item=><p key={item.id}>{item.summary}</p>)}</div>}
+    {resolution.mapUpdates?.length > 0 && <div className="world-response map-change"><span>新的方向</span>{resolution.mapUpdates.map(item=><div key={item.id}><b>{item.title}</b><p>{item.summary}</p><em>相关地点出现新的可追踪事项</em></div>)}</div>}
     {debugMode && resolution.worldFeedback?.thread && <div className="world-feedback"><span>开发信息</span><pre>{JSON.stringify(resolution.worldFeedback, null, 2)}</pre></div>}
   </section>
 }
@@ -85,13 +87,14 @@ const pallasLocalPositions = {
   mountain_temple: [76, 27],
 }
 
-function WorldMap({ locations, mapPlaces, current, points, time, chapterComplete, chapterPhase, bodyCondition, busy, onTravel, onRecover }) {
+function WorldMap({ locations, mapPlaces, journal, current, points, time, chapterComplete, chapterPhase, bodyCondition, busy, onTravel, onRecover }) {
   const [mapLevel, setMapLevel] = useState('ionia')
   const remaining = Math.max(0, time.chapter_limit - time.total_actions)
   const overviewPlaces = mapPlaces.filter(place => place.id !== 'ionian_archipelago')
   const openPallas = () => setMapLevel('pallas')
   const inFinale = !chapterComplete && time.total_actions >= 12
   const finaleNext = {12:['mountain_temple','终章一 · 前往山寺平息灵界异象'],13:['war_ruins','终章二 · 赴战争遗迹与亚索会合'],14:['pallas','终章三 · 返回帕拉斯布置防线'],15:['pallas','终章四 · 迎战血旗督军']}[time.total_actions]
+  const leadsFor = locationId => journal.filter(item => item.trackable && item.status !== 'closed' && item.relatedLocations?.includes(locationId))
   const handleLocalKey = (event, locationId) => {
     if (event.key !== 'Enter' && event.key !== ' ') return
     event.preventDefault()
@@ -110,13 +113,13 @@ function WorldMap({ locations, mapPlaces, current, points, time, chapterComplete
       </svg> : <svg className="official-game-map pallas-detail-map" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice" role="img" aria-label="帕拉斯的四个章节地点">
         <image href={terrainMapUrl} x="0" y="0" width="100" height="100" preserveAspectRatio="xMidYMid slice"/>
         <path className="local-route" d="M50 50 L29 27 M50 50 L25 72 M50 50 L76 27"/>
-        {locations.map(loc => { const [x,y]=pallasLocalPositions[loc.id]; const active=loc.id===current; const isPallas=loc.id==='pallas'; return <g key={loc.id} className={`local-map-pin ${active?'current':''} ${isPallas?'hub':''}`} transform={`translate(${x} ${y})`} role="button" tabIndex="0" aria-label={`${loc.name}${active?'，当前位置':'，前往需要一次行动'}`} onClick={() => !busy && !active && onTravel(loc.id)} onKeyDown={event => handleLocalKey(event,loc.id)}><circle r={isPallas?4:3}/><text y="8">{loc.name}</text><text className="pin-status" y="13">{active?'当前位置':isPallas?'返回 · 1':'前往 · 1'}</text></g> })}
+        {locations.map(loc => { const [x,y]=pallasLocalPositions[loc.id]; const active=loc.id===current; const isPallas=loc.id==='pallas'; const fresh=leadsFor(loc.id).some(item=>item.isNew); return <g key={loc.id} className={`local-map-pin ${active?'current':''} ${isPallas?'hub':''} ${fresh?'has-new':''}`} transform={`translate(${x} ${y})`} role="button" tabIndex="0" aria-label={`${loc.name}${active?'，当前位置':'，前往需要一次行动'}`} onClick={() => !busy && !active && onTravel(loc.id)} onKeyDown={event => handleLocalKey(event,loc.id)}><circle r={isPallas?4:3}/><text y="8">{loc.name}</text><text className="pin-status" y="13">{fresh?'NEW · 有新方向':active?'当前位置':isPallas?'返回 · 1':'前往 · 1'}</text></g> })}
       </svg>}
       <div className="map-wash wash-a"/><div className="map-wash wash-b"/>
     </div>
     <div className="map-note"><span><MapPin size={14}/>{mapLevel === 'ionia' ? '点击帕拉斯，在地图窗口内放大' : '使用窗口右上角按钮返回全境'}</span></div>
     {!inFinale && current === 'pallas' && <section className="recovery-card"><div><span>安全地点 · 稳定恢复</span><b>在帕拉斯休息</b><p>解除疲惫和紧张，使伤势改善一级。消耗 1 次行动，时间成本 1。</p></div><button disabled={busy || points <= 0 || bodyCondition?.state === 'healthy'} onClick={onRecover}>休息 / 治疗</button></section>}
-    {!inFinale && <section className="travel-list"><header><div><span>周边行程</span><b>章节探索地点</b></div><small>帕拉斯地区内的四个可探索地点</small></header>{locations.map(loc => { const Icon=locationIcons[loc.icon]; const active=loc.id===current; return <button disabled={busy||active||chapterComplete} key={loc.id} onClick={() => onTravel(loc.id)} className={active?'current':''}><i><Icon size={17}/></i><div><b>{loc.name}</b><small>{loc.description}</small></div><em>{active?'当前位置':'前往 · 1'}</em></button> })}</section>}
+    {!inFinale && <section className="travel-list"><header><div><span>周边行程</span><b>选择你为什么前往</b></div><small>地点有稳定倾向，具体现场仍会动态发生</small></header>{locations.map(loc => { const Icon=locationIcons[loc.icon]; const active=loc.id===current; const leads=leadsFor(loc.id); return <article className={`travel-card ${active?'current':''}`} key={loc.id}><div className="location-personality"><i><Icon size={17}/></i><div><header><b>{loc.name}</b><em>风险 · {loc.risk}</em></header><strong>{loc.playstyle}</strong><p>{loc.expectation}</p><small>更可能获得：{loc.feedbackTypes?.join(' / ')}</small></div></div><div className="location-leads">{leads.length ? leads.map(lead=><button disabled={busy||chapterComplete} key={lead.id} onClick={()=>onTravel(loc.id,lead.id)}><span>{lead.isNew?'NEW · 当前可追踪':'继续追踪'}</span><b>{lead.title}</b><small>{lead.summary}</small></button>) : <p>目前没有明确线索，你仍然可以自由探索。</p>}</div><button className="free-explore" disabled={busy||chapterComplete||active} onClick={()=>onTravel(loc.id,null)}>{active?'当前位置':'自由探索 · 1 次行动'}</button></article> })}</section>}
   </div>
 }
 
@@ -131,7 +134,8 @@ function Status({ player, game, busy, onInterveneThread, onFocusWorldTopic }) {
     <h4>角色状态</h4><section className={`body-condition ${player.bodyCondition.state}`}><header><span>身体状况</span><b>{player.bodyCondition.label}</b></header><p>{player.bodyCondition.description}</p>{debugMode && <div>{Object.entries(player.bodyCondition.modifiers || {}).map(([key,value])=><em key={key}>{coreAttributeNames[key]} {value}%</em>)}</div>}</section>
     <div className="effect-list">{player.statuses?.length ? player.statuses.map(item=><span key={item.id || item.name}>状态 · {item.name} · {item.duration ?? '条件解除'}</span>) : <small>没有临时状态</small>}{player.traits?.map(item=><span key={item.id}>特质 · {item.name} Lv.{item.level}</span>)}</div>
     <h4>核心能力 <small>决定你能不能做到</small></h4><div className="core-stat-grid">{Object.entries(player.coreAbilities || {}).map(([key,value])=><div key={key}><span>{coreAttributeNames[key]}</span><b>{value}</b></div>)}</div>
-    <h4>已知线索</h4><div className="effect-list">{player.clues?.length ? player.clues.map(item=><span key={item.name}>{item.name}</span>) : <small>尚未掌握可靠线索</small>}</div>
+    <Journal entries={game.journal || []} busy={busy} onFocus={onFocusWorldTopic}/>
+    <h4>已知线索</h4><div className="effect-list">{player.clues?.length ? player.clues.map(item=><span key={item.name}>{item.name}{item.relatedLocations?.length ? ` · 指向${item.relatedLocations.length}处地点` : ''}</span>) : <small>尚未掌握可靠线索</small>}</div>
     <WorldThreads game={game} busy={busy} onInterveneThread={onInterveneThread} onFocusWorldTopic={onFocusWorldTopic}/>
     <h4>人格倾向 <small>描述你倾向怎么做</small></h4><div className="value-bars">{Object.entries(player.personality).map(([key,value]) => <ValueBar key={key} label={personalityNames[key]} value={value}/>)}</div>
     <h4>命运倾向 <small>影响你更容易与哪些类型的故事发生联系</small></h4><div className="value-bars fate-bars">{Object.entries(player.fateAffinities).map(([key,value]) => <ValueBar key={key} label={fateNames[key]} value={value}/>)}</div>
@@ -139,6 +143,15 @@ function Status({ player, game, busy, onInterveneThread, onFocusWorldTopic }) {
     <h4>旅途印记</h4><div className="memory-count"><Scroll/><div><b>{player.memories.length} 段经历</b><span>去过 {game.visited.length} 个地方 · 遇见 {game.completed_events.length} 次选择</span></div></div>
   </div>
 }
+
+function Journal({ entries, busy, onFocus }) {
+  const focused = entries.filter(item => item.trackable && item.focused)
+  const discoveries = entries.filter(item => item.kind === 'discovery').slice(-5).reverse()
+  const leads = entries.filter(item => item.trackable && !item.focused)
+  return <section className="journal-sections"><h4>正在关注 <small>会提高地图与相关现场的优先度</small></h4><div>{focused.length ? focused.map(item=><JournalEntry key={item.id} item={item} busy={busy} onFocus={onFocus}/>) : <small>你还没有主动关注某件事</small>}</div><h4>当前可追踪 <small>你已知、值得继续追的方向</small></h4><div>{leads.length ? leads.map(item=><JournalEntry key={item.id} item={item} busy={busy} onFocus={onFocus}/>) : <small>暂时没有明确方向</small>}</div><h4>新发现 <small>最近在现场确认的事情</small></h4><div>{discoveries.length ? discoveries.map(item=><article key={item.id}><b>{item.title}</b><p>{item.summary}</p></article>) : <small>还没有新的现场发现</small>}</div></section>
+}
+
+function JournalEntry({ item, busy, onFocus }) { return <article className={item.isNew?'new':''}><header><b>{item.title}</b>{item.isNew && <em>NEW</em>}</header><p>{item.summary}</p><footer><span>相关地点 · {item.relatedLocations?.join(' / ')}</span><button disabled={busy} onClick={()=>onFocus(item.id,!item.focused)}>{item.focused?'取消关注':'设为关注'}</button></footer></article> }
 
 function WorldSignals({ signals }) {
   const visible = signals.filter(signal => signal.observed || signal.forcedOpportunity)

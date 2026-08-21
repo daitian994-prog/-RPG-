@@ -37,6 +37,8 @@ FINALE_EVENTS = {
     14: ("chapter1_yasuo_finale", "war_ruins", "finale_yasuo"),
     15: ("chapter1_defense_finale", "pallas", "finale_defense"),
 }
+OPENING_LEAD_ID = "lead-unfamiliar-footprints"
+FOLLOW_UP_LEAD_ID = "lead-old-military-road"
 CORE_ABILITY_KEYS = ("martial", "physique", "perception", "willpower", "agility", "social")
 LEGACY_CORE_KEY_MAP = {"attunement": "perception", "resolve": "willpower", "finesse": "agility", "influence": "social"}
 BODY_CONDITIONS = {
@@ -149,6 +151,59 @@ class GameService:
 
     def _apply_item_bonuses(self, player: dict[str, Any], item: dict[str, Any]) -> tuple[dict[str, int], dict[str, int]]:
         return {}, {}
+
+    @staticmethod
+    def _opening_state(game_id: str) -> dict[str, Any]:
+        variants = [
+            "黄昏时，一个从断风森林回来的猎人把沾泥的靴子藏进长凳下。他只肯承认：林缘出现了不像野兽留下的脚印。",
+            "帕拉斯的晚市将散时，两名采药人争论起断风森林边缘的一串脚印。步幅太整齐，泥里还留着靴跟的直角。",
+            "村口守卫在火盆旁烧掉一张受潮的巡路记录，却留下其中一句：断风森林北缘，有人类足迹逆着兽道而行。",
+        ]
+        primary = variants[int(game_id[:8], 16) % len(variants)]
+        secondary = [
+            "山间寺庙的旧钟昨夜无风自鸣，寺里的人暂时没有解释。",
+            "有人在战争遗迹方向见到短促火光，但距离太远，无法确认是谁点燃的。",
+        ][int(game_id[8:16], 16) % 2]
+        return {
+            "complete": False,
+            "title": "帕拉斯 · 风带来的消息",
+            "intro": "你抵达帕拉斯的第一晚，炊烟、暮钟和压低的谈话声让这个村庄显得既安稳又警觉。",
+            "signals": [primary, secondary],
+            "closing": "这些说法还不是答案，但至少有一件事已经足够具体：断风森林里，有一组值得亲眼确认的脚印。",
+        }
+
+    @staticmethod
+    def _opening_journal_entry() -> dict[str, Any]:
+        return {
+            "id": OPENING_LEAD_ID,
+            "kind": "lead",
+            "title": "不像野兽的脚印",
+            "summary": "断风森林边缘出现了一组步幅整齐、带有靴跟痕迹的脚印；它们更像人类留下的。",
+            "trackable": True,
+            "relatedLocations": ["windbreak"],
+            "sourceType": "world_signal",
+            "status": "known",
+            "threadId": "noxian_remnants",
+            "isNew": True,
+            "focused": False,
+        }
+
+    @staticmethod
+    def _add_journal_entry(state: dict[str, Any], entry: dict[str, Any]) -> dict[str, Any] | None:
+        journal = state.setdefault("journal", [])
+        existing = next((item for item in journal if item.get("id") == entry.get("id")), None)
+        if existing:
+            return None
+        journal.append(entry)
+        return entry
+
+    def complete_opening(self, game_id: str) -> dict[str, Any]:
+        state = self.get(game_id)
+        state.setdefault("opening", {})["complete"] = True
+        state["openingComplete"] = True
+        state["log"].append("你把帕拉斯听来的消息记下，第一次带着明确的缘由打开地图。")
+        save_game(game_id, state)
+        return state
 
     def _normalize_state(self, state: dict[str, Any]) -> bool:
         """Upgrade V1 saves in place without discarding the player's journey."""
@@ -269,6 +324,18 @@ class GameService:
         if "scene" not in state:
             state["scene"] = None
             changed = True
+        if "journal" not in state:
+            state["journal"] = []
+            changed = True
+        if "openingComplete" not in state:
+            state["openingComplete"] = True
+            changed = True
+        if "opening" not in state:
+            state["opening"] = {"complete": True, "signals": []}
+            changed = True
+        if "playerIntent" not in state:
+            state["playerIntent"] = {"kind": "free_exploration", "summary": "自由探索"}
+            changed = True
         if state.get("scene") is None and state.get("pendingEvent", {}).get("template", {}).get("dynamic"):
             pending = state.pop("pendingEvent")
             event = pending["template"]
@@ -363,6 +430,10 @@ class GameService:
             "aiNarratorDebug": {"source": "none", "validation": {"valid": True, "errors": []}},
             "narrativeAuthorityDebug": {},
             "scene": None,
+            "opening": self._opening_state(game_id),
+            "openingComplete": False,
+            "journal": [self._opening_journal_entry()],
+            "playerIntent": {"kind": "opening", "summary": "先了解帕拉斯正在发生什么"},
         }
         self._sync_character_layers(state)
         self.outcomes.record(state, "new_game", self.outcomes.snapshot(state), metadata={"version": PROJECT_VERSION})
@@ -393,6 +464,8 @@ class GameService:
             "worldState": state.get("worldState", {}),
             "directorState": state.get("directorState", {}),
             "heroActors": state.get("heroActors", {}),
+            "journal": state.get("journal", []),
+            "playerIntent": state.get("playerIntent", {}),
         }
         return hashlib.sha256(json.dumps(snapshot, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()[:16]
 
@@ -454,7 +527,7 @@ class GameService:
             choice["assessment"] = self.ai.assess_choice(event, choice, state, index)
         return event
 
-    def travel(self, game_id: str, location_id: str, *, narrate: bool = True) -> tuple[dict[str, Any], dict[str, Any]]:
+    def travel(self, game_id: str, location_id: str, *, lead_id: str | None = None, narrate: bool = True) -> tuple[dict[str, Any], dict[str, Any]]:
         state = self.get(game_id)
         before = self.outcomes.snapshot(state)
         if state.get("demo_complete"):
@@ -483,6 +556,20 @@ class GameService:
         location = next((x for x in self.locations if x["id"] == location_id), None)
         if not location:
             raise ValueError("未知地点")
+        lead = None
+        if lead_id:
+            lead = next((item for item in state.get("journal", []) if item.get("id") == lead_id and item.get("trackable")), None)
+            if not lead or location_id not in lead.get("relatedLocations", []):
+                raise ValueError("这条已知信息与当前地点没有可靠关联")
+            lead["isNew"] = False
+            lead["status"] = "investigating"
+            state["playerIntent"] = {
+                "kind": "track_lead", "leadId": lead["id"], "title": lead["title"],
+                "summary": lead["summary"], "relatedLocations": lead["relatedLocations"],
+                "threadId": lead.get("threadId"),
+            }
+        else:
+            state["playerIntent"] = {"kind": "free_exploration", "summary": f"自由探索{location['name']}"}
         state["action_points"] -= 1
         state["time"]["total_actions"] += 1
         state["location"] = location_id
@@ -744,6 +831,65 @@ class GameService:
         for key, value in source.items():
             target[key] = target.get(key, 0) + value
 
+    def _record_journal_feedback(
+        self, state: dict[str, Any], event_id: str, event: dict[str, Any], scene: dict[str, Any] | None,
+        ai_result: dict[str, Any] | None, outcome: dict[str, Any], granted_clues: list[dict[str, Any]],
+    ) -> dict[str, list[dict[str, Any]]]:
+        feedback: dict[str, list[dict[str, Any]]] = {"discoveries": [], "mapUpdates": []}
+        if not scene or not ai_result:
+            return feedback
+        fact_source = ai_result.get("factsAdded") or scene.get("facts", [])
+        facts = [str(item).strip() for item in fact_source if str(item).strip()]
+        if facts:
+            discovery = {
+                "id": "discovery-" + hashlib.sha256(f"{event_id}:{facts[0]}".encode()).hexdigest()[:12],
+                "kind": "discovery", "title": "现场确认", "summary": facts[0],
+                "trackable": False, "relatedLocations": [state["location"]],
+                "sourceType": "scene_result", "status": "known", "isNew": True,
+            }
+            if self._add_journal_entry(state, discovery):
+                feedback["discoveries"].append(discovery)
+
+        intent = state.get("playerIntent", {})
+        proposed = ai_result.get("suggestedLead")
+        lead: dict[str, Any] | None = None
+        if proposed:
+            lead = {
+                "id": "lead-" + hashlib.sha256(f"{event_id}:{proposed['title']}".encode()).hexdigest()[:12],
+                "kind": "lead", "title": proposed["title"], "summary": proposed["summary"],
+                "trackable": True, "relatedLocations": proposed["relatedLocations"],
+                "sourceType": "scene_result", "status": "known", "threadId": proposed["threadId"],
+                "sourceLeadId": intent.get("leadId"), "isNew": True, "focused": False,
+            }
+        # The first Demo hand-off is a stable functional relationship; the concrete Scene prose remains dynamic.
+        if intent.get("leadId") == OPENING_LEAD_ID:
+            certainty = "你在森林现场确认了穿靴者活动的痕迹。" if outcome["code"] != "failure" else "现场被扰乱前，仍有痕迹指向穿靴者曾在附近活动。"
+            lead = {
+                "id": FOLLOW_UP_LEAD_ID, "kind": "lead", "title": "旧军道近期有人活动",
+                "summary": certainty + "方向与通往战争遗迹的旧军道一致。",
+                "trackable": True, "relatedLocations": ["war_ruins"], "sourceType": "scene_result",
+                "status": "known", "threadId": "noxian_remnants", "sourceLeadId": OPENING_LEAD_ID,
+                "isNew": True, "focused": False,
+            }
+            original = next((item for item in state.get("journal", []) if item.get("id") == OPENING_LEAD_ID), None)
+            if original:
+                original["status"] = "confirmed"
+            if "clue-human-activity" not in {item.get("id") for item in state["player"].get("clues", [])}:
+                clue = {
+                    "id": "clue-human-activity", "name": "穿靴者的人类活动痕迹",
+                    "summary": certainty, "source": event.get("title", "断风森林的现场"),
+                    "relatedLocations": ["war_ruins"], "ability": "perception", "bonus": 5,
+                    "modifiers": {"perception": 5}, "threadId": "noxian_remnants",
+                    "targetTags": ["人类足迹", "旧军道"], "actionTags": ["investigate"],
+                    "locationTags": ["windbreak", "war_ruins"], "factionTags": ["noxus"],
+                    "dedupeKey": "noxian_remnants|human_activity",
+                }
+                state["player"]["clues"].append(clue)
+                granted_clues.append(clue)
+        if lead and self._add_journal_entry(state, lead):
+            feedback["mapUpdates"].append(lead)
+        return feedback
+
     def resolve(self, game_id: str, event_id: str, choice_index: int, choice_round: int | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
         state = self.get(game_id)
         before = self.outcomes.snapshot(state)
@@ -923,6 +1069,8 @@ class GameService:
                     clue = {
                         "id": "clue-" + hashlib.sha256(f"{event_id}:{active_scene['round']}:{clue_name}".encode()).hexdigest()[:12],
                         "name": clue_name, "source": event["title"],
+                        "summary": (ai_result.get("factsAdded") or [clue_name])[0],
+                        "relatedLocations": suggested.get("relatedLocations", [state["location"]]),
                         "ability": clue_ability,
                         "bonus": suggested.get("bonus", 5),
                         "modifiers": {clue_ability: suggested.get("bonus", 5)},
@@ -955,6 +1103,10 @@ class GameService:
         else:
             world_feedback = self.outcomes.apply_world_feedback(state, director, outcome, choice)
             narrative = self.ai.generate_resolution(event, choice, state, location, battle_text, outcome, world_feedback)
+        journal_feedback = self._record_journal_feedback(
+            state, event_id, event, active_scene if scene_ended else None,
+            ai_result if scene_ended else None, outcome, granted_clues,
+        )
         resolution = {
             "event_id": event_id,
             "event_title": event["title"].format(location=location["name"]),
@@ -972,6 +1124,8 @@ class GameService:
             "clues": granted_clues,
             "chapter_complete": state.get("chapter_complete", False),
             "worldFeedback": world_feedback,
+            "discoveries": journal_feedback["discoveries"],
+            "mapUpdates": journal_feedback["mapUpdates"],
             "sceneRound": active_scene.get("lastResult", {}).get("round") if active_scene else None,
             "sceneEnded": scene_ended,
             "aiResult": ai_result,
@@ -1059,7 +1213,17 @@ class GameService:
     def focus_world_topic(self, game_id: str, topic_id: str, focused: bool) -> tuple[dict[str, Any], dict[str, Any]]:
         state = self.get(game_id)
         snapshot = self.outcomes.snapshot(state)
-        result = self.director.set_focus(state, topic_id, focused)
+        lead = next((item for item in state.get("journal", []) if item.get("id") == topic_id and item.get("trackable")), None)
+        if lead:
+            lead["focused"] = focused
+            focus = state["directorState"]["focus"]
+            if focused and topic_id not in focus:
+                focus.append(topic_id)
+            if not focused and topic_id in focus:
+                focus.remove(topic_id)
+            result = {"topicId": topic_id, "focused": focused, "message": "旅途日志已更新。地图会优先显示相关地点，现场也更容易回应这件事。"}
+        else:
+            result = self.director.set_focus(state, topic_id, focused)
         state["player_state_version"] = int(state.get("player_state_version", 1)) + 1
         state["log"].append(result["message"])
         self.outcomes.record(state, "set_world_focus", snapshot, metadata={"topicId": topic_id, "focused": focused})
