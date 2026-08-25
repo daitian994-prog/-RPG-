@@ -1091,17 +1091,23 @@ class GameService:
                 )
                 ai_attempts.append({"raw": raw, "validatorResult": copy.deepcopy(validator_result)})
                 if validated is not None:
+                    audit, audit_raw = self.ai.audit_scene_result(active_scene, choice, validated)
+                    ai_attempts[-1]["contextAudit"] = {"result": copy.deepcopy(audit), "raw": audit_raw}
+                    audit_feedback = self.ai.audit_repair_feedback(audit)
+                    if audit_feedback:
+                        revision_feedback = audit_feedback
+                        continue
                     ai_result = validated
                     break
                 revision_feedback = validator_result["errors"]
                 if proposal is None and raw is None:
                     break
             if ai_result is None:
-                fallback = self.ai.fallback_scene_result(active_scene, choice, outcome, location)
+                synthesized = self.ai.synthesize_scene_result(active_scene, choice, outcome, location)
                 ai_result, validator_result = self.outcomes.validate_ai_result(
-                    fallback, active_scene, outcome, choice, director, state,
+                    synthesized, active_scene, outcome, choice, director, state,
                 )
-                ai_attempts.append({"raw": "local_fallback", "validatorResult": copy.deepcopy(validator_result)})
+                ai_attempts.append({"raw": "dynamic_synthesis", "validatorResult": copy.deepcopy(validator_result)})
                 if ai_result is None:
                     raise ValueError("现场结果未通过规则验证")
 

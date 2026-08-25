@@ -1,3 +1,4 @@
+import json
 import unittest
 from unittest.mock import patch
 
@@ -80,7 +81,7 @@ class GameLoopTest(unittest.TestCase):
         self.assertEqual(game["location"], "war_ruins")
         self.assertIn(len(event["choices"]), {2, 3, 4})
         self.assertTrue(all("assessment" in choice for choice in event["choices"]))
-        self.assertEqual(event["narrative_source"], "fallback")
+        self.assertEqual(event["narrative_source"], "dynamic_synthesis")
         self.assertGreaterEqual(len("".join(event["text"].split())), 220)
         self.assertGreaterEqual(len(event["text"].split("\n\n")), 4)
         for fact in event["sceneProposal"]["playerObservableFacts"]:
@@ -107,7 +108,7 @@ class GameLoopTest(unittest.TestCase):
         with patch.dict("os.environ", {"RUNETERRA_DISABLE_REMOTE_AI": "1"}, clear=False), patch.object(self.service.ai, "_contract_narrate") as contract:
             _game, event = self.service.travel(game["id"], "windbreak", narrate=True)
         contract.assert_not_called()
-        self.assertEqual(event["narrative_source"], "fallback")
+        self.assertEqual(event["narrative_source"], "dynamic_synthesis")
 
     def test_world_state_version_invalidates_after_player_change(self):
         game = self.service.new_game(["peace", "power", "freedom", "spirit", "destiny", "peace"])
@@ -122,7 +123,7 @@ class GameLoopTest(unittest.TestCase):
         self.assertTrue(game["player"]["inventory"][0]["description"])
         self.assertNotIn("bonuses", game["player"]["inventory"][0])
         self.assertIn("effects", game["player"]["inventory"][0])
-        self.assertEqual(game["gameVersion"], "0.7.0")
+        self.assertEqual(game["gameVersion"], "0.9.0")
 
     def test_world_thread_intervention_costs_time_and_persists(self):
         game = self.service.new_game(["peace", "power", "freedom", "spirit", "destiny", "peace"])
@@ -350,7 +351,7 @@ class GameLoopTest(unittest.TestCase):
         self.assertIn(resolution["outcome"]["tier"], {"critical", "success", "partial", "failure"})
         self.assertEqual(resolution["battle"]["chance"], resolution["outcome"]["final_probability"])
 
-    def test_copper_bell_scene_continues_with_a_concrete_fact(self):
+    def test_offline_result_answers_the_chosen_goal_without_fixed_story_fact(self):
         from backend.database.db import save_game
         game = self.service.new_game(["peace"] * 6)
         event = {
@@ -378,12 +379,14 @@ class GameLoopTest(unittest.TestCase):
         save_game(game["id"], game)
         with patch.dict("os.environ", {"RUNETERRA_DISABLE_REMOTE_AI": "1"}, clear=False):
             game, resolution = self.service.resolve(game["id"], event["id"], 0, 1)
-        self.assertFalse(resolution["sceneEnded"])
-        self.assertIn("震动来自钟座下方", " ".join(resolution["aiResult"]["factsAdded"]))
-        self.assertEqual(resolution["nextEvent"]["round"], 2)
-        self.assertIn("震动来自钟座下方", " ".join(game["scene"]["facts"]))
+        self.assertTrue(resolution["sceneEnded"])
+        facts = " ".join(resolution["aiResult"]["factsAdded"])
+        self.assertIn("查明震动来源", facts)
+        self.assertIn("铜钟", facts)
+        self.assertNotIn("钟座下方一道持续渗出冷气", facts)
+        self.assertIn("查明震动来源", " ".join(game["scene"]["facts"]))
 
-    def test_three_round_trace_scene_regenerates_actions_and_changes_focus(self):
+    def test_offline_success_closes_answered_trace_scene_without_template_chain(self):
         from backend.database.db import save_game
 
         game = self.service.new_game(["peace"] * 6)
@@ -414,31 +417,12 @@ class GameLoopTest(unittest.TestCase):
 
         with patch.dict("os.environ", {"RUNETERRA_DISABLE_REMOTE_AI": "1"}, clear=False):
             game, round_one = self.service.resolve(game["id"], event["id"], 0, 1)
-            self.assertFalse(round_one["sceneEnded"])
-            self.assertEqual(game["scene"]["currentFocus"], "新鲜脚印的来源")
-            round_two_event = round_one["nextEvent"]
-            round_two_texts = [item["text"] for item in round_two_event["choices"]]
-            self.assertIn("沿着新鲜脚印追查它的去向", round_two_texts)
-            self.assertNotIn("检查铜铃附近痕迹", round_two_texts)
-
-            follow_index = round_two_texts.index("沿着新鲜脚印追查它的去向")
-            game["scene"]["actions"][follow_index]["automatic"] = "success"
-            save_game(game["id"], game)
-            game, round_two = self.service.resolve(game["id"], event["id"], follow_index, 2)
-            self.assertFalse(round_two["sceneEnded"])
-            self.assertEqual(game["scene"]["currentFocus"], "正在接近的人")
-            round_three_event = round_two["nextEvent"]
-            round_three_texts = [item["text"] for item in round_three_event["choices"]]
-            self.assertTrue(any("来者" in text for text in round_three_texts))
-            self.assertTrue(all("铜铃" not in text for text in round_three_texts))
-
-            observe_index = next(i for i, text in enumerate(round_three_texts) if "观察来者" in text)
-            game["scene"]["actions"][observe_index]["automatic"] = "success"
-            save_game(game["id"], game)
-            game, round_three = self.service.resolve(game["id"], event["id"], observe_index, 3)
-
-        self.assertTrue(round_three["sceneEnded"])
-        self.assertEqual(game["scene"]["lastResult"]["round"], 3)
+            self.assertTrue(round_one["sceneEnded"])
+        combined = json.dumps(round_one["aiResult"], ensure_ascii=False)
+        self.assertIn("还原最近发生的事", combined)
+        for stale in ("铜铃附近出现一组新鲜脚印", "沿着新鲜脚印追查它的去向", "正在接近的人是谁"):
+            self.assertNotIn(stale, combined)
+        self.assertEqual(game["scene"]["lastResult"]["round"], 1)
         self.assertFalse(game["scene"]["sceneDecision"]["continueScene"])
         self.assertIn("没有必须立即处理", game["scene"]["sceneDecision"]["reason"])
 
