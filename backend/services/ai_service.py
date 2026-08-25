@@ -596,10 +596,25 @@ class AIService:
 
         current_focus = str(scene.get("currentFocus") or question)
         approach = str(choice.get("approach") or "现场核对")
-        discovery = (
-            f"围绕“{goal}”的判断已经落到现场：你通过{approach}确认，"
-            f"{target}此刻呈现的变化确实与{current_focus}直接相关"
-        )
+        action_tags = set(choice.get("actionTags", []))
+        if any(term in question for term in ("为什么", "为何", "来源")):
+            discovery = f"{target}的变化来自靠近{current_focus}一侧刚发生的外部作用，并非自身或自然环境造成"
+        elif "谁" in question:
+            discovery = f"{target}由一名不在场的人刚刚留下；{actor}确认其行动方向与现场其他人的来路不同"
+        elif any(term in question for term in ("哪里", "何处", "通向")):
+            discovery = f"{target}延伸的方向越过了当前现场边界，并在靠近{current_focus}的一侧留下连续痕迹"
+        elif "social" in action_tags:
+            discovery = f"{actor}说清了{target}发生变化前后的两次不同状态，并确认变化出现在{current_focus}之后"
+        elif "stealth" in action_tags:
+            discovery = f"从未惊动现场的角度可以看见，{target}的异动只在周围脚步远离后出现"
+        elif "combat" in action_tags:
+            discovery = f"{target}在受到正面压制后显露出原本藏住的一侧，那里留有刚形成的受力痕迹"
+        elif "protect" in action_tags:
+            discovery = f"移开危险后，{target}下方露出的接触面仍然潮湿，说明这项变化刚发生不久"
+        elif "spirit" in action_tags:
+            discovery = f"{target}周围的灵息并非均匀扩散，而是从靠近{current_focus}的一侧间歇涌出"
+        else:
+            discovery = f"{target}上较新的压痕覆盖在旧痕之上，边缘尚未被尘土填平，说明变化发生在现场其他痕迹之后"
         next_question = ""
         code = outcome["code"]
         if code in {"critical", "success", "partial"}:
@@ -614,16 +629,16 @@ class AIService:
             second = f"{actor}还用亲眼所见补全了{target}发生变化前后的先后顺序"
             facts_added.append(second)
             reactions.append(second)
-            narrative = f"你执行了“{action}”，没有让无关细节带偏判断。{discovery}。{actor}顺着你的核对重新回忆，补全了变化发生前后的顺序。"
+            narrative = f"你按“{approach}”完成了{action}。{discovery}。{actor}顺着你指出的位置重新回忆，又补全了变化发生前后的顺序。"
         elif code == "success":
             reactions.append(f"{actor}按你的判断重新核对{target}，承认这项变化能够回答眼前的问题。")
-            narrative = f"你执行了“{action}”，把注意力始终放在“{goal}”上。{discovery}。{actor}随后亲自核对你指出的位置，原本互相冲突的现场说法终于有了一项可以确认的结论。"
+            narrative = f"你按“{approach}”完成了{action}。{discovery}。{actor}随后亲自核对你指出的位置，原本互相冲突的现场说法终于有了一项可以确认的结论。"
         elif code == "partial":
             risk = f"{actor}在核对{target}时意外改变了它原本的状态，余下细节正在迅速消失"
             reactions.append(risk)
             next_question = f"怎样在{target}的剩余细节消失前完成判断？"
             questions_added.append(next_question)
-            narrative = f"你执行了“{action}”，确认了足以推进判断的事实：{discovery}。但{risk}；你得到了答案的一部分，也必须立刻决定是否为剩余部分承担更高风险。"
+            narrative = f"你按“{approach}”完成了{action}，并确认：{discovery}。但{risk}；你得到了答案的一部分，也必须立刻决定是否为剩余部分承担更高风险。"
         else:
             reactions.append(f"{actor}因你的动作后退一步，不再允许任何人继续靠近{target}。")
             narrative = f"你试图通过“{action}”来{goal}，但{approach}没有取得足以支撑结论的结果。{target}最关键的状态已经发生改变，{actor}也因这次动作退开；原来的问题没有得到回答，继续靠近只会重复同一次判断。"

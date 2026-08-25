@@ -73,6 +73,38 @@ class GameLoopTest(unittest.TestCase):
         self.assertGreaterEqual(len("".join(first["narrative"].split())), 40)
         self.assertNotIn("已经确定的结果", resolution["narrative"])
 
+    def test_second_hard_valid_result_is_used_even_if_auditor_again_requests_repair(self):
+        game = self.service.new_game(["peace"] * 6)
+        event = self._dynamic_event(game, event_type="探索")
+        event["choices"][0]["automatic"] = "success"
+        event_id = self._install_pending(game, event)
+        calls = {"generation": 0}
+
+        def generated(scene, _event, choice, _state, _location, _outcome, **_kwargs):
+            calls["generation"] += 1
+            question = scene["questions"][0]
+            target = (choice.get("targetTags") or scene.get("objects") or ["现场物件"])[0]
+            result = {
+                "narrative": f"你重新核对{target}的表面与周围痕迹，确认最新变化覆盖在旧痕之上；在场者据此修正了先前互相矛盾的说法。",
+                "factsAdded": [f"{target}的最新变化覆盖在旧痕之上"],
+                "questionsAdded": [], "questionsResolved": [question], "npcReactions": ["在场者修正了说法"],
+                "sceneDecision": {"continueScene": False, "reason": "当前问题已有具体答案。", "nextFocus": ""},
+                "suggestedClue": None, "suggestedLead": None, "leadDisposition": "KEEP_ACTIVE",
+            }
+            return result, json.dumps(result, ensure_ascii=False)
+
+        repeated_repair = ({"verdict": "REPAIR", "issues": [{
+            "field": "narrative", "type": "STYLE", "reason": "仍想修改",
+            "repairInstruction": "再次改写",
+        }]}, "audit")
+        with patch.object(self.service.ai, "generate_scene_result", side_effect=generated), \
+             patch.object(self.service.ai, "audit_scene_result", return_value=repeated_repair), \
+             patch.object(self.service.ai, "synthesize_scene_result", side_effect=AssertionError("不应进入动态保底")):
+            _game, resolution = self.service.resolve(game["id"], event_id, 0)
+        self.assertEqual(calls["generation"], 2)
+        self.assertNotIn("判断已经落到现场", resolution["narrative"])
+        self.assertIn("覆盖在旧痕之上", resolution["narrative"])
+
     def test_prepare_travel_resolves_facts_without_remote_narration(self):
         game = self.service.new_game(["peace", "power", "freedom", "spirit", "destiny", "peace"])
         with patch.object(self.service.ai, "_narrate") as narrate:
@@ -123,7 +155,7 @@ class GameLoopTest(unittest.TestCase):
         self.assertTrue(game["player"]["inventory"][0]["description"])
         self.assertNotIn("bonuses", game["player"]["inventory"][0])
         self.assertIn("effects", game["player"]["inventory"][0])
-        self.assertEqual(game["gameVersion"], "0.9.0")
+        self.assertEqual(game["gameVersion"], "0.9.1")
 
     def test_world_thread_intervention_costs_time_and_persists(self):
         game = self.service.new_game(["peace", "power", "freedom", "spirit", "destiny", "peace"])
@@ -381,10 +413,10 @@ class GameLoopTest(unittest.TestCase):
             game, resolution = self.service.resolve(game["id"], event["id"], 0, 1)
         self.assertTrue(resolution["sceneEnded"])
         facts = " ".join(resolution["aiResult"]["factsAdded"])
-        self.assertIn("查明震动来源", facts)
         self.assertIn("铜钟", facts)
+        self.assertIn("外部作用", facts)
         self.assertNotIn("钟座下方一道持续渗出冷气", facts)
-        self.assertIn("查明震动来源", " ".join(game["scene"]["facts"]))
+        self.assertIn("外部作用", " ".join(game["scene"]["facts"]))
 
     def test_offline_success_closes_answered_trace_scene_without_template_chain(self):
         from backend.database.db import save_game
@@ -419,7 +451,8 @@ class GameLoopTest(unittest.TestCase):
             game, round_one = self.service.resolve(game["id"], event["id"], 0, 1)
             self.assertTrue(round_one["sceneEnded"])
         combined = json.dumps(round_one["aiResult"], ensure_ascii=False)
-        self.assertIn("还原最近发生的事", combined)
+        self.assertIn("铜铃", combined)
+        self.assertIn("较新的压痕", combined)
         for stale in ("铜铃附近出现一组新鲜脚印", "沿着新鲜脚印追查它的去向", "正在接近的人是谁"):
             self.assertNotIn(stale, combined)
         self.assertEqual(game["scene"]["lastResult"]["round"], 1)

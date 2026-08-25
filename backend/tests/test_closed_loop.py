@@ -87,6 +87,31 @@ class ClosedLoopTest(unittest.TestCase):
         self.assertIsNone(rejected)
         self.assertTrue(any("Thread Stage" in item for item in debug["errors"]))
 
+    def test_invalid_optional_metadata_is_dropped_without_losing_concrete_result(self):
+        scene = {
+            "id": "crate", "round": 1, "actors": ["药师"], "objects": ["木箱"],
+            "facts": ["木箱从外侧裂开"], "questions": ["谁碰过木箱？"],
+        }
+        proposal = {
+            "narrative": "你沿裂口逐寸检查，药师也重新核对目击经过；外侧新划痕与脚夫离开的方向一致，现场终于有了一项明确结论。",
+            "factsAdded": ["外侧新划痕与脚夫离开的方向一致"],
+            "questionsAdded": [], "questionsResolved": ["谁碰过木箱？", "不存在的问题？"],
+            "npcReactions": ["药师愿意继续作证"],
+            "sceneDecision": {"continueScene": False, "reason": "当前问题已回答。", "nextFocus": ""},
+            "suggestedClue": {"name": ""},
+            "suggestedLead": {"title": "无关联方向", "summary": "没有合法地点", "relatedLocations": ["unknown"]},
+            "leadDisposition": "UNSUPPORTED",
+        }
+        accepted, debug = self.outcomes.validate_ai_result(
+            proposal, scene, {"code": "success"},
+            {"semanticAction": "检查木箱", "attribute": "perception", "result": {}}, {}, self.state,
+        )
+        self.assertTrue(debug["valid"])
+        self.assertEqual(accepted["questionsResolved"], ["谁碰过木箱？"])
+        self.assertIsNone(accepted["suggestedClue"])
+        self.assertIsNone(accepted["suggestedLead"])
+        self.assertEqual(accepted["leadDisposition"], "KEEP_ACTIVE")
+
     def test_state_change_log_is_auditable_and_bounded(self):
         for index in range(55):
             before = self.outcomes.snapshot(self.state)

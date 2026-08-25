@@ -515,7 +515,7 @@ class NarrativeAuthorityService:
                     audit, audit_raw = self._remote_context_audit({"actions": proposals}, audit_context, phase="next_actions")
                     attempts[-1]["contextAudit"] = {"result": audit, "raw": audit_raw}
                     audit_feedback = self._audit_feedback(audit)
-                    if audit_feedback:
+                    if audit_feedback and _attempt == 0:
                         revision_feedback = audit_feedback
                         continue
                     return choices, {
