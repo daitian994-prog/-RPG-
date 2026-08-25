@@ -81,4 +81,40 @@
 
 .sheet-backdrop{background:radial-gradient(circle at 50% 18%,#203b30aa,#020706e8);padding-top:5dvh}.event-sheet,.event-sheet.battle{max-height:95dvh;padding:12px 22px max(25px,env(safe-area-inset-bottom));background:linear-gradient(165deg,#10231c,#091511 68%,#07100d);color:#e8dfcb;border-top:1px solid #c3a25f;box-shadow:0 -18px 55px #000a}.event-sheet:before{content:"";position:absolute;inset:9px 9px auto;height:70px;border:1px solid #b9975d29;border-bottom:0;pointer-events:none}.sheet-handle{background:#ae9b73;margin-bottom:24px}.sheet-close{color:#a8aa9f;z-index:2}.event-heading{position:relative;padding:0 0 18px}.event-heading .event-type{color:#c3a25f}.event-heading h2{max-width:92%;margin:9px 0 14px;font-size:26px;line-height:1.45;color:#f0e7d3}.event-heading>i{display:block;width:72px;height:1px;background:#c3a25f}.event-copy{max-height:none;overflow:visible;margin:0 0 19px;padding:18px 18px 19px;border:1px solid #a98b5138;background:#13261f;color:#b8c0b6;box-shadow:inset 0 0 28px #0002}.event-copy-label{display:block;margin-bottom:12px;font:9px "Noto Serif SC",serif;letter-spacing:.2em;color:#b9975d}.event-copy p{font:12px/2 "Noto Serif SC",serif;color:#b8c0b6}.choice-section{margin-top:18px}.choice-section>header{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;margin-bottom:11px}.choice-section>header span{font:600 11px "Noto Serif SC",serif;letter-spacing:.16em;color:#d7c49b}.choice-section>header i{height:1px;background:#b9975d33}.choice-section>header small{font-size:8px;color:#71837a}.event-choices{gap:10px}.event-choices button{min-height:88px;padding:14px 13px;border:1px solid #a98b5147;background:linear-gradient(110deg,#13271f,#0f201a);color:#e3dac8;grid-template-columns:34px 1fr 18px;box-shadow:inset 3px 0 #b9975d24;transition:border-color .2s,background .2s,transform .2s}.event-choices button:not(:disabled):hover{border-color:#c5a65f;background:linear-gradient(110deg,#1b3429,#12251e)}.event-choices button:active{background:#1c332a}.event-choices button>span{font-size:18px;color:#c5a65f}.event-choices button b{font:500 13px/1.65 "Noto Serif SC",serif;color:#e5dcc9}.event-choices button small{color:#89988e}.event-choices button>svg{color:#b9975d}.choice-assessment em{color:#8e9b92;background:#09130f;border-color:#a98b5138}.choice-assessment em:first-child{color:#c2a56b}.choice-assessment .risk-高,.choice-assessment .risk-致命{color:#dc8065;background:#35181366;border-color:#a65b47}.fate-note{color:#6f8077;margin-top:18px}.battle-warning{background:#45251f99;color:#e0a18d;border-left:2px solid #a95a47}.director-badge,.dynamic-components{background:#0a1511;border-color:#a98b5147;color:#819188}.dynamic-components pre{white-space:pre-wrap}.event-sheet::-webkit-scrollbar{width:5px}.event-sheet::-webkit-scrollbar-thumb{background:#806f4c;border-radius:4px}
 
+/* v0.8.1 event reading contrast: warm paper narrative and choices */
+.event-copy{
+  border-color:#b59b65;
+  background:#ece5d2;
+  color:#263a32;
+  box-shadow:inset 0 0 0 1px #fff8e8,inset 0 0 24px #9d87591a;
+}
+.event-copy-label{color:#9a7139}
+.event-copy p{color:#263a32}
+.event-choices button{
+  border-color:#b9aa88;
+  background:#f0eadb;
+  color:#24382f;
+  box-shadow:inset 3px 0 #b9975d66;
+}
+.event-choices button:not(:disabled):hover{
+  border-color:#aa884b;
+  background:#e8dfca;
+}
+.event-choices button:active{background:#ded3ba}
+.event-choices button>span{color:#a47b3f}
+.event-choices button b{color:#24382f}
+.event-choices button small{color:#69736b}
+.event-choices button>svg{color:#9f7f49}
+.choice-assessment em{
+  color:#59675f;
+  background:#e3dccb;
+  border-color:#a99d813d;
+}
+.choice-assessment em:first-child{color:#86633a}
+.choice-assessment .risk-高,.choice-assessment .risk-致命{
+  color:#984f3d;
+  background:#ead8d0;
+  border-color:#b57663;
+}
+
 @media(max-width:390px){.journal-cover{height:210px;padding:22px 20px}.journal-heading{padding:22px 20px 15px}.story-view .journal-narrative,.story-view .milestone,.story-view .world-signals,.story-view .resolution-panel,.story-view .demo-ending{margin-left:16px;margin-right:16px}.story-view .next-action{margin-left:16px;margin-right:16px;width:calc(100% - 32px)}.sheet-backdrop{padding-top:2dvh}.event-sheet{padding:10px 16px max(20px,env(safe-area-inset-bottom))}.event-heading h2{font-size:22px}.event-copy{padding:15px}.event-copy p{font-size:11px;line-height:1.9}.event-choices button{min-height:80px;padding:12px 10px;grid-template-columns:28px 1fr 15px}.event-choices button b{font-size:12px}.choice-assessment em{font-size:7px}}
