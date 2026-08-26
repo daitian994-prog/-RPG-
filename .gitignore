@@ -7,6 +7,7 @@ backend/database/game.db
 backend/database/*.db
 backend/database/*.db-*
 backend/database/*.sqlite*
+history-player/
 backend/__pycache__/
 backend/**/__pycache__/
 .venv/
