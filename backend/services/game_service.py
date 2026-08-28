@@ -1,5 +1,4 @@
 import json
-import logging
 import copy
 import math
 import random
@@ -21,7 +20,6 @@ from backend.services.world_thread_service import WorldThreadService
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "game-data"
 PROJECT_VERSION = (DATA_DIR.parent / "VERSION").read_text(encoding="utf-8").strip()
-LOGGER = logging.getLogger(__name__)
 
 TRAIT_TO_FATE = {
     "peace": "guardian",
@@ -1093,26 +1091,17 @@ class GameService:
                 )
                 ai_attempts.append({"raw": raw, "validatorResult": copy.deepcopy(validator_result)})
                 if validated is not None:
-                    audit, audit_raw = self.ai.audit_scene_result(active_scene, choice, validated)
-                    ai_attempts[-1]["contextAudit"] = {"result": copy.deepcopy(audit), "raw": audit_raw}
-                    audit_feedback = self.ai.audit_repair_feedback(audit)
-                    if audit_feedback and _attempt == 0:
-                        LOGGER.info("scene_result_context_repair scene=%s round=%s issues=%s", active_scene.get("id"), active_scene.get("round"), audit_feedback)
-                        revision_feedback = audit_feedback
-                        continue
                     ai_result = validated
                     break
-                if raw is not None:
-                    LOGGER.warning("scene_result_rejected scene=%s round=%s attempt=%s reasons=%s", active_scene.get("id"), active_scene.get("round"), _attempt + 1, validator_result.get("errors"))
                 revision_feedback = validator_result["errors"]
                 if proposal is None and raw is None:
                     break
             if ai_result is None:
-                synthesized = self.ai.synthesize_scene_result(active_scene, choice, outcome, location)
+                fallback = self.ai.fallback_scene_result(active_scene, choice, outcome, location)
                 ai_result, validator_result = self.outcomes.validate_ai_result(
-                    synthesized, active_scene, outcome, choice, director, state,
+                    fallback, active_scene, outcome, choice, director, state,
                 )
-                ai_attempts.append({"raw": "dynamic_synthesis", "validatorResult": copy.deepcopy(validator_result)})
+                ai_attempts.append({"raw": "local_fallback", "validatorResult": copy.deepcopy(validator_result)})
                 if ai_result is None:
                     raise ValueError("现场结果未通过规则验证")
 

@@ -1,4 +1,3 @@
-import json
 import unittest
 from unittest.mock import patch
 
@@ -73,38 +72,6 @@ class GameLoopTest(unittest.TestCase):
         self.assertGreaterEqual(len("".join(first["narrative"].split())), 40)
         self.assertNotIn("已经确定的结果", resolution["narrative"])
 
-    def test_second_hard_valid_result_is_used_even_if_auditor_again_requests_repair(self):
-        game = self.service.new_game(["peace"] * 6)
-        event = self._dynamic_event(game, event_type="探索")
-        event["choices"][0]["automatic"] = "success"
-        event_id = self._install_pending(game, event)
-        calls = {"generation": 0}
-
-        def generated(scene, _event, choice, _state, _location, _outcome, **_kwargs):
-            calls["generation"] += 1
-            question = scene["questions"][0]
-            target = (choice.get("targetTags") or scene.get("objects") or ["现场物件"])[0]
-            result = {
-                "narrative": f"你重新核对{target}的表面与周围痕迹，确认最新变化覆盖在旧痕之上；在场者据此修正了先前互相矛盾的说法。",
-                "factsAdded": [f"{target}的最新变化覆盖在旧痕之上"],
-                "questionsAdded": [], "questionsResolved": [question], "npcReactions": ["在场者修正了说法"],
-                "sceneDecision": {"continueScene": False, "reason": "当前问题已有具体答案。", "nextFocus": ""},
-                "suggestedClue": None, "suggestedLead": None, "leadDisposition": "KEEP_ACTIVE",
-            }
-            return result, json.dumps(result, ensure_ascii=False)
-
-        repeated_repair = ({"verdict": "REPAIR", "issues": [{
-            "field": "narrative", "type": "STYLE", "reason": "仍想修改",
-            "repairInstruction": "再次改写",
-        }]}, "audit")
-        with patch.object(self.service.ai, "generate_scene_result", side_effect=generated), \
-             patch.object(self.service.ai, "audit_scene_result", return_value=repeated_repair), \
-             patch.object(self.service.ai, "synthesize_scene_result", side_effect=AssertionError("不应进入动态保底")):
-            _game, resolution = self.service.resolve(game["id"], event_id, 0)
-        self.assertEqual(calls["generation"], 2)
-        self.assertNotIn("判断已经落到现场", resolution["narrative"])
-        self.assertIn("覆盖在旧痕之上", resolution["narrative"])
-
     def test_prepare_travel_resolves_facts_without_remote_narration(self):
         game = self.service.new_game(["peace", "power", "freedom", "spirit", "destiny", "peace"])
         with patch.object(self.service.ai, "_narrate") as narrate:
@@ -113,7 +80,7 @@ class GameLoopTest(unittest.TestCase):
         self.assertEqual(game["location"], "war_ruins")
         self.assertIn(len(event["choices"]), {2, 3, 4})
         self.assertTrue(all("assessment" in choice for choice in event["choices"]))
-        self.assertEqual(event["narrative_source"], "dynamic_synthesis")
+        self.assertEqual(event["narrative_source"], "fallback")
         self.assertGreaterEqual(len("".join(event["text"].split())), 220)
         self.assertGreaterEqual(len(event["text"].split("\n\n")), 4)
         for fact in event["sceneProposal"]["playerObservableFacts"]:
@@ -140,7 +107,7 @@ class GameLoopTest(unittest.TestCase):
         with patch.dict("os.environ", {"RUNETERRA_DISABLE_REMOTE_AI": "1"}, clear=False), patch.object(self.service.ai, "_contract_narrate") as contract:
             _game, event = self.service.travel(game["id"], "windbreak", narrate=True)
         contract.assert_not_called()
-        self.assertEqual(event["narrative_source"], "dynamic_synthesis")
+        self.assertEqual(event["narrative_source"], "fallback")
 
     def test_world_state_version_invalidates_after_player_change(self):
         game = self.service.new_game(["peace", "power", "freedom", "spirit", "destiny", "peace"])
@@ -155,7 +122,7 @@ class GameLoopTest(unittest.TestCase):
         self.assertTrue(game["player"]["inventory"][0]["description"])
         self.assertNotIn("bonuses", game["player"]["inventory"][0])
         self.assertIn("effects", game["player"]["inventory"][0])
-        self.assertEqual(game["gameVersion"], "0.9.2")
+        self.assertEqual(game["gameVersion"], "0.7.0")
 
     def test_world_thread_intervention_costs_time_and_persists(self):
         game = self.service.new_game(["peace", "power", "freedom", "spirit", "destiny", "peace"])
@@ -383,7 +350,7 @@ class GameLoopTest(unittest.TestCase):
         self.assertIn(resolution["outcome"]["tier"], {"critical", "success", "partial", "failure"})
         self.assertEqual(resolution["battle"]["chance"], resolution["outcome"]["final_probability"])
 
-    def test_offline_result_answers_the_chosen_goal_without_fixed_story_fact(self):
+    def test_copper_bell_scene_continues_with_a_concrete_fact(self):
         from backend.database.db import save_game
         game = self.service.new_game(["peace"] * 6)
         event = {
@@ -411,14 +378,12 @@ class GameLoopTest(unittest.TestCase):
         save_game(game["id"], game)
         with patch.dict("os.environ", {"RUNETERRA_DISABLE_REMOTE_AI": "1"}, clear=False):
             game, resolution = self.service.resolve(game["id"], event["id"], 0, 1)
-        self.assertTrue(resolution["sceneEnded"])
-        facts = " ".join(resolution["aiResult"]["factsAdded"])
-        self.assertIn("铜钟", facts)
-        self.assertIn("外部作用", facts)
-        self.assertNotIn("钟座下方一道持续渗出冷气", facts)
-        self.assertIn("外部作用", " ".join(game["scene"]["facts"]))
+        self.assertFalse(resolution["sceneEnded"])
+        self.assertIn("震动来自钟座下方", " ".join(resolution["aiResult"]["factsAdded"]))
+        self.assertEqual(resolution["nextEvent"]["round"], 2)
+        self.assertIn("震动来自钟座下方", " ".join(game["scene"]["facts"]))
 
-    def test_offline_success_closes_answered_trace_scene_without_template_chain(self):
+    def test_three_round_trace_scene_regenerates_actions_and_changes_focus(self):
         from backend.database.db import save_game
 
         game = self.service.new_game(["peace"] * 6)
@@ -449,13 +414,31 @@ class GameLoopTest(unittest.TestCase):
 
         with patch.dict("os.environ", {"RUNETERRA_DISABLE_REMOTE_AI": "1"}, clear=False):
             game, round_one = self.service.resolve(game["id"], event["id"], 0, 1)
-            self.assertTrue(round_one["sceneEnded"])
-        combined = json.dumps(round_one["aiResult"], ensure_ascii=False)
-        self.assertIn("铜铃", combined)
-        self.assertIn("较新的压痕", combined)
-        for stale in ("铜铃附近出现一组新鲜脚印", "沿着新鲜脚印追查它的去向", "正在接近的人是谁"):
-            self.assertNotIn(stale, combined)
-        self.assertEqual(game["scene"]["lastResult"]["round"], 1)
+            self.assertFalse(round_one["sceneEnded"])
+            self.assertEqual(game["scene"]["currentFocus"], "新鲜脚印的来源")
+            round_two_event = round_one["nextEvent"]
+            round_two_texts = [item["text"] for item in round_two_event["choices"]]
+            self.assertIn("沿着新鲜脚印追查它的去向", round_two_texts)
+            self.assertNotIn("检查铜铃附近痕迹", round_two_texts)
+
+            follow_index = round_two_texts.index("沿着新鲜脚印追查它的去向")
+            game["scene"]["actions"][follow_index]["automatic"] = "success"
+            save_game(game["id"], game)
+            game, round_two = self.service.resolve(game["id"], event["id"], follow_index, 2)
+            self.assertFalse(round_two["sceneEnded"])
+            self.assertEqual(game["scene"]["currentFocus"], "正在接近的人")
+            round_three_event = round_two["nextEvent"]
+            round_three_texts = [item["text"] for item in round_three_event["choices"]]
+            self.assertTrue(any("来者" in text for text in round_three_texts))
+            self.assertTrue(all("铜铃" not in text for text in round_three_texts))
+
+            observe_index = next(i for i, text in enumerate(round_three_texts) if "观察来者" in text)
+            game["scene"]["actions"][observe_index]["automatic"] = "success"
+            save_game(game["id"], game)
+            game, round_three = self.service.resolve(game["id"], event["id"], observe_index, 3)
+
+        self.assertTrue(round_three["sceneEnded"])
+        self.assertEqual(game["scene"]["lastResult"]["round"], 3)
         self.assertFalse(game["scene"]["sceneDecision"]["continueScene"])
         self.assertIn("没有必须立即处理", game["scene"]["sceneDecision"]["reason"])
 

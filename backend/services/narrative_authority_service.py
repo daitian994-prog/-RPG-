@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import copy
 from difflib import SequenceMatcher
-import hashlib
 import json
 import os
 import re
@@ -60,98 +59,8 @@ class NarrativeAuthorityService:
         except (DeepSeekError, json.JSONDecodeError, TypeError, KeyError) as exc:
             return None, str(exc)
 
-    def _remote_context_audit(
-        self, content: dict[str, Any], context: dict[str, Any], *, phase: str,
-    ) -> tuple[dict[str, Any] | None, str | None]:
-        """Ask AI for semantic continuity only; the program still owns acceptance and state."""
-        if os.getenv("RUNETERRA_DISABLE_REMOTE_AI") == "1" or not self.remote.configured:
-            return None, None
-        try:
-            response = self.remote.generate(
-                system=(
-                    "你是互动RPG的独立上下文审核员，不续写剧情、不决定规则、不修改世界状态。"
-                    "比较candidate与context，检查是否承接最新事实、是否重复已经解决的问题、行动是否引用现场实体、"
-                    "选项是否只是同义改写、是否与历史行动重复。严格输出JSON对象："
-                    "verdict只能是PASS或REPAIR；issues为数组，每项包含field、type、reason、repairInstruction。"
-                    "只有明确影响连续性或玩家决策的问题才判REPAIR；不要因为文风偏好否决内容。"
-                ),
-                prompt=json.dumps({
-                    "phase": phase,
-                    "context": context,
-                    "candidate": content,
-                    "outputSchema": {
-                        "verdict": "PASS | REPAIR",
-                        "issues": [{"field": "字段路径", "type": "问题类型", "reason": "依据", "repairInstruction": "局部修复要求"}],
-                    },
-                }, ensure_ascii=False),
-                temperature=0.1,
-                max_tokens=500,
-            )
-            audit = self._parse_json(response["text"])
-            if audit.get("verdict") not in {"PASS", "REPAIR"} or not isinstance(audit.get("issues", []), list):
-                raise ValueError("上下文审核返回格式无效")
-            return {"verdict": audit["verdict"], "issues": audit.get("issues", [])}, response["text"]
-        except (DeepSeekError, json.JSONDecodeError, TypeError, KeyError, ValueError) as exc:
-            return None, str(exc)
-
     @staticmethod
-    def _audit_feedback(audit: dict[str, Any] | None) -> list[str]:
-        if not audit or audit.get("verdict") != "REPAIR":
-            return []
-        feedback = []
-        for issue in audit.get("issues", []):
-            if not isinstance(issue, dict):
-                continue
-            instruction = str(issue.get("repairInstruction") or issue.get("reason") or "").strip()
-            if instruction:
-                feedback.append(f"{issue.get('field', 'content')}：{instruction}")
-        return feedback[:6]
-
-    @staticmethod
-    def _dynamic_action_proposals(
-        *, actors: list[Any], objects: list[Any], focus: str, location: str,
-        previous_actions: list[dict[str, Any]] | None = None,
-    ) -> list[dict[str, Any]]:
-        """Compose grounded emergency actions from live entities, never from story phrase lists."""
-        actor = str(next((item for item in actors if str(item).strip()), "在场的见证人"))
-        obj = str(next((item for item in objects if str(item).strip()), focus or "现场的异常"))
-        focus = str(focus or obj).strip()
-        location = str(location or "当前地点").strip()
-        seed = int(hashlib.sha256(f"{location}|{focus}|{actor}|{obj}".encode("utf-8")).hexdigest()[:8], 16)
-        observe_verbs = ("核对", "辨认", "复查", "比对")
-        social_verbs = ("请", "向", "让", "同")
-        move_verbs = ("绕到", "退到", "借助", "贴近")
-        proposals = [
-            {
-                "semanticAction": f"{observe_verbs[seed % len(observe_verbs)]}{obj}与{focus}之间的细节",
-                "goal": f"确认{focus}究竟说明了什么",
-                "approach": f"从{obj}上可见的新旧差异逐项判断",
-                "expectedRiskType": "中", "target": obj,
-            },
-            {
-                "semanticAction": f"{social_verbs[(seed >> 2) % len(social_verbs)]}{actor}说明他刚才亲眼看见的经过",
-                "goal": f"验证关于{focus}的现场说法",
-                "approach": f"把证词与{obj}的状态当场核对",
-                "expectedRiskType": "低", "target": actor,
-            },
-            {
-                "semanticAction": f"{move_verbs[(seed >> 4) % len(move_verbs)]}{focus}不易察觉的位置继续观察",
-                "goal": f"在不惊动现场变化的情况下确认{focus}",
-                "approach": f"利用{location}的遮挡与视线空隙改变观察角度",
-                "expectedRiskType": "高", "target": focus,
-            },
-            {
-                "semanticAction": f"保留对{obj}的记录并退出{location}现场",
-                "goal": f"停止承担围绕{focus}继续扩大的风险",
-                "approach": "确认退路后主动结束本次介入",
-                "expectedRiskType": "低", "target": obj,
-            },
-        ]
-        previous_text = " ".join(str(item.get("text", "")) for item in previous_actions or [])
-        return [item for item in proposals if item["semanticAction"] not in previous_text]
-
-    @staticmethod
-    def _synthesize_scene(template: dict[str, Any], envelope: dict[str, Any]) -> dict[str, Any]:
+    def _fallback_scene(template: dict[str, Any], envelope: dict[str, Any]) -> dict[str, Any]:
         components = template.get("components", {})
         actor = components.get("actor", "附近的旅人")
         obj = components.get("object", "一处异常痕迹")
@@ -215,10 +124,21 @@ class NarrativeAuthorityService:
             f"若退开，现场和关键说法都可能随人群散去。你必须先决定，要从哪一处入手，以及愿意为这个判断承担什么。"
         )
         scene = "\n\n".join((atmosphere, paragraph_two, paragraph_three, paragraph_four))
-        actions = NarrativeAuthorityService._dynamic_action_proposals(
-            actors=[actor], objects=[obj], focus=pressure,
-            location=envelope["location"]["name"],
-        )
+        actions = []
+        if tracking_lead:
+            actions = [
+                {"semanticAction":"沿新鲜脚印追查去向","goal":"确认留下痕迹的人去了哪里","approach":"比较步幅、泥土边缘与遮挡","expectedRiskType":"中","target":obj},
+                {"semanticAction":f"询问{actor}见过哪些相似足迹","goal":"确认痕迹是否属于本地人","approach":"核对猎人经验与巡路习惯","expectedRiskType":"低","target":actor},
+                {"semanticAction":"在背风处等待留下脚印的人返回","goal":"观察来者身份而不先暴露自己","approach":"利用地形隐蔽观察","expectedRiskType":"高","target":obj},
+                {"semanticAction":"记下方向并离开森林","goal":"保留现有发现并停止承担风险","approach":"主动结束介入","expectedRiskType":"低","target":obj},
+            ]
+        else:
+            for choice in template.get("choices", []):
+                actions.append({
+                    "semanticAction": choice.get("semanticAction", choice["text"]),
+                    "goal": choice.get("goal", "处理眼前问题"), "approach": choice.get("approach", choice.get("hint", "谨慎行动")),
+                    "expectedRiskType": choice.get("risk", "中"), "target": obj,
+                })
         return {
             "sceneTitle": template.get("title", "眼前的异样"), "sceneSummary": scene,
             "localActors": [actor] + ([hero_name] if hero and encounter.get("level", 0) >= 4 else []),
@@ -226,33 +146,6 @@ class NarrativeAuthorityService:
             "playerObservableFacts": [f"{obj}就在{setting}", pressure] + ([hero_line] if hero_line else []),
             "suggestedActions": actions,
         }
-
-    def _repair_scene_fields(
-        self, proposal: dict[str, Any], template: dict[str, Any], envelope: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Preserve usable AI fields and repair only missing/structurally unusable parts."""
-        baseline = self._synthesize_scene(template, envelope)
-        repaired = copy.deepcopy(baseline)
-        title = str(proposal.get("sceneTitle", "")).strip()
-        if title:
-            repaired["sceneTitle"] = title
-        summary = str(proposal.get("sceneSummary", "")).strip()
-        paragraphs = [item.strip() for item in re.split(r"\n\s*\n", summary) if item.strip()]
-        if len(re.sub(r"\s", "", summary)) >= 220 and len(paragraphs) >= 4:
-            repaired["sceneSummary"] = summary
-        for key in ("localActors", "localObjects", "playerObservableFacts"):
-            value = proposal.get(key)
-            if isinstance(value, list) and any(str(item).strip() for item in value):
-                repaired[key] = [str(item).strip() for item in value if str(item).strip()]
-        problem = str(proposal.get("immediateProblem", "")).strip()
-        if problem:
-            repaired["immediateProblem"] = problem
-        actions = proposal.get("suggestedActions")
-        if isinstance(actions, list):
-            usable = [item for item in actions if isinstance(item, dict)]
-            if usable:
-                repaired["suggestedActions"] = (usable + baseline["suggestedActions"])[:max(2, min(5, len(usable) + 1))]
-        return repaired
 
     @staticmethod
     def _forbidden_claim(text: str) -> str | None:
@@ -419,8 +312,10 @@ class NarrativeAuthorityService:
         accepted: list[dict[str, Any]] = []
         rejected: list[dict[str, Any]] = []
         normalized: set[str] = set()
-        pool = list(proposals) + list(fallback)
-        desired_count = min(4, max(2, len(proposals)))
+        pool = list(proposals) if len(proposals) >= 2 else list(proposals) + [
+            {"semanticAction": item.get("semanticAction", item["text"]), "goal": item.get("goal", "处理眼前问题"), "approach": item.get("approach", item.get("hint", "谨慎行动")), "expectedRiskType": item.get("risk", "中"), "target": None}
+            for item in fallback
+        ]
         for proposal in pool:
             if not isinstance(proposal, dict) or not all(str(proposal.get(key, "")).strip() for key in ("semanticAction", "goal", "approach")):
                 rejected.append({"proposal": proposal, "reason": "行动缺少语义、目标或手段"})
@@ -462,7 +357,7 @@ class NarrativeAuthorityService:
                 choice.update({"attribute": ability, "requiredAbility": ability, "difficulty": max(5, min(12, difficulty + risk_delta))})
             accepted.append(choice)
             normalized.add(key)
-            if len(accepted) == desired_count:
+            if len(accepted) == 4:
                 break
         if len(accepted) < 2:
             raise ValueError("AI与保底行动均未能提供足够合法选项")
@@ -474,6 +369,7 @@ class NarrativeAuthorityService:
         """Create the next round's actions from the persisted scene, with a local fallback."""
         proposals: list[dict[str, Any]] = []
         raw: str | None = None
+        remote_valid = False
         attempts: list[dict[str, Any]] = []
         previous_actions = copy.deepcopy(scene.get("previousActions", []))
         current_focus = str(scene.get("currentFocus") or (scene.get("questions") or ["当前变化"])[0])
@@ -508,16 +404,7 @@ class NarrativeAuthorityService:
                         current_focus=current_focus, current_round=int(scene.get("round", 1)),
                     )
                     attempts.append({"raw": raw, "rejectedActions": copy.deepcopy(debug["rejectedActions"])})
-                    audit_context = {
-                        "sceneState": {key: scene.get(key) for key in ("round", "actors", "objects", "facts", "questions", "lastAction", "lastResult")},
-                        "previousActions": previous_actions, "currentFocus": current_focus,
-                    }
-                    audit, audit_raw = self._remote_context_audit({"actions": proposals}, audit_context, phase="next_actions")
-                    attempts[-1]["contextAudit"] = {"result": audit, "raw": audit_raw}
-                    audit_feedback = self._audit_feedback(audit)
-                    if audit_feedback and _attempt == 0:
-                        revision_feedback = audit_feedback
-                        continue
+                    remote_valid = True
                     return choices, {
                         "source": "ai", "rawAIOutput": raw, "attempts": attempts,
                         "previousActions": previous_actions, "currentFocus": current_focus,
@@ -527,16 +414,46 @@ class NarrativeAuthorityService:
                     raw = str(exc)
                     revision_feedback = ["上一批行动重复、缺失或不足两条，请围绕最新Focus彻底重写。", raw]
                     attempts.append({"raw": raw, "error": str(exc)})
-        proposals = self._dynamic_action_proposals(
-            actors=scene.get("actors", []), objects=scene.get("objects", []), focus=current_focus,
-            location=envelope.get("location", {}).get("name", "当前地点"), previous_actions=previous_actions,
-        )
+        # Remote attempts either returned above or failed validation. Always replace
+        # them with focus-aware local actions instead of reusing a rejected batch.
+        if not remote_valid:
+            actor = (scene.get("actors") or ["在场的人"])[0]
+            if any(term in current_focus for term in ("接近", "来者", "脚步", "现身")):
+                target = "正在靠近的人"
+                proposals = [
+                    {"semanticAction": "藏到遮蔽物后观察来者", "goal": "确认来者身份与意图", "approach": "隐蔽观察", "expectedRiskType": "中", "target": target},
+                    {"semanticAction": "主动出声询问来者身份", "goal": "在对方靠近前表明立场", "approach": "保持退路并沟通", "expectedRiskType": "高", "target": target},
+                    {"semanticAction": f"带{actor}先退到安全位置", "goal": "避开可能发生的正面冲突", "approach": "借地形撤开", "expectedRiskType": "低", "target": actor},
+                    {"semanticAction": "立即退出现场", "goal": "不再承担眼前风险", "approach": "主动结束介入", "expectedRiskType": "低", "target": target},
+                ]
+            elif any(term in current_focus for term in ("脚印", "足迹", "痕迹", "步幅", "来源")):
+                target = "新鲜脚印"
+                proposals = [
+                    {"semanticAction": "沿着新鲜脚印追查它的去向", "goal": "找到留下脚印的人", "approach": "辨认落脚方向并追踪", "expectedRiskType": "中", "target": target},
+                    {"semanticAction": f"询问{actor}是否认得这种步幅", "goal": "确认脚印属于谁", "approach": "把步幅与熟人习惯核对", "expectedRiskType": "低", "target": actor},
+                    {"semanticAction": "检查新旧脚印交叉的位置", "goal": "还原两批人经过的先后", "approach": "比较泥土边缘与覆盖关系", "expectedRiskType": "中", "target": "新旧脚印交叉处"},
+                    {"semanticAction": "记下脚印方向并离开现场", "goal": "停止承担眼前风险", "approach": "主动结束介入", "expectedRiskType": "低", "target": target},
+                ]
+            elif any(term in current_focus for term in ("缝隙", "地下", "裂缝", "冷气")):
+                target = "钟座下方的缝隙"
+                proposals = [
+                    {"semanticAction": "检查缝隙中冷气与回声的方向", "goal": "判断缝隙通向哪里", "approach": "用轻石与声音测试深度", "expectedRiskType": "中", "target": target},
+                    {"semanticAction": f"询问{actor}过去是否见过这道缝隙", "goal": "确认缝隙出现的时间", "approach": "核对寺庙旧事", "expectedRiskType": "低", "target": actor},
+                    {"semanticAction": "退开钟座并结束调查", "goal": "不触动地下未知之物", "approach": "保持距离", "expectedRiskType": "低", "target": target},
+                ]
+            else:
+                target = current_focus
+                proposals = [
+                    {"semanticAction": f"从侧面观察{target}", "goal": f"弄清{target}", "approach": "换一个位置核对细节", "expectedRiskType": "中", "target": target},
+                    {"semanticAction": f"询问{actor}关于{target}的细节", "goal": f"确认{target}", "approach": "核对现场说法", "expectedRiskType": "低", "target": actor},
+                    {"semanticAction": "停止介入并离开现场", "goal": "结束眼前风险", "approach": "保持距离", "expectedRiskType": "低", "target": target},
+                ]
         choices, debug = self.map_actions(
             proposals, envelope, difficulty, template.get("choices", []), previous_actions=previous_actions,
             current_focus=current_focus, current_round=int(scene.get("round", 1)),
         )
         return choices, {
-            "source": "dynamic_synthesis", "rawAIOutput": raw, "attempts": attempts,
+            "source": "ai" if remote_valid else "fallback", "rawAIOutput": raw, "attempts": attempts,
             "previousActions": previous_actions, "currentFocus": current_focus,
             "generatedNextActions": [item["semanticAction"] for item in choices], **debug,
         }
@@ -552,40 +469,37 @@ class NarrativeAuthorityService:
             attempts.append({"raw": retry_raw, "validation": copy.deepcopy(retry_validation)})
             if retry_valid is not None:
                 proposal, validation, raw = retry_valid, retry_validation, retry_raw
-            elif retry_proposal is not None and not retry_validation["rejectedSceneFacts"]:
-                repaired = self._repair_scene_fields(retry_proposal, template, envelope)
+            elif retry_proposal is not None and not retry_validation["rejectedSceneFacts"] and retry_validation["validatorReasons"] and all(reason.startswith("事件正文过短或结构不足") for reason in retry_validation["validatorReasons"]):
+                actors = retry_proposal.get("localActors") or [template.get("components", {}).get("actor", "附近的旅人")]
+                objects = retry_proposal.get("localObjects") or [template.get("components", {}).get("object", "一处异常痕迹")]
+                repair_template = {
+                    **template, "title": retry_proposal.get("sceneTitle", template.get("title", "眼前的变化")),
+                    "components": {
+                        **template.get("components", {}), "actor": actors[0], "object": objects[0],
+                        "pressure": retry_proposal.get("immediateProblem", template.get("components", {}).get("pressure", "局势正在变化")),
+                    },
+                }
+                repaired = self._fallback_scene(repair_template, envelope)
+                repaired.update({
+                    "sceneTitle": retry_proposal.get("sceneTitle", repaired["sceneTitle"]),
+                    "localActors": actors, "localObjects": objects,
+                    "immediateProblem": retry_proposal.get("immediateProblem", repaired["immediateProblem"]),
+                    "playerObservableFacts": retry_proposal.get("playerObservableFacts", repaired["playerObservableFacts"]),
+                    "suggestedActions": retry_proposal.get("suggestedActions", repaired["suggestedActions"]),
+                })
                 repaired_valid, repaired_validation = self.validate_scene(repaired, envelope)
                 if repaired_valid is not None:
                     proposal, validation, raw, source = repaired_valid, repaired_validation, retry_raw, "ai_repaired"
         if proposal is None:
-            proposal = self._synthesize_scene(template, envelope)
-            source = "dynamic_synthesis"
+            proposal = self._fallback_scene(template, envelope)
+            source = "fallback"
             fallback_valid, fallback_debug = self.validate_scene(proposal, envelope)
             if fallback_valid is None:
                 raise ValueError("本地叙事保底未通过边界验证")
             validation["validatorReasons"].extend(fallback_debug["validatorReasons"])
-        elif source == "ai":
-            audit_context = {
-                "narrativeEnvelope": envelope,
-                "activeLead": envelope.get("playerIntent"),
-                "history": envelope.get("leadHistory", []),
-            }
-            audit, audit_raw = self._remote_context_audit(proposal, audit_context, phase="initial_scene")
-            attempts[-1]["contextAudit"] = {"result": audit, "raw": audit_raw}
-            feedback = self._audit_feedback(audit)
-            if feedback:
-                retry_proposal, retry_raw = self._remote_scene(envelope, revision_feedback=feedback)
-                retry_valid, retry_validation = self.validate_scene(retry_proposal, envelope)
-                attempts.append({"raw": retry_raw, "validation": copy.deepcopy(retry_validation), "reason": "context_audit_repair"})
-                if retry_valid is not None:
-                    proposal, validation, raw, source = retry_valid, retry_validation, retry_raw, "ai_context_repaired"
         intensity = envelope.get("directorIntent", {}).get("intensity", "medium")
         difficulty = {"low": 6, "medium": 8, "high": 10, "climax": 11}.get(intensity, 8)
-        dynamic_actions = self._dynamic_action_proposals(
-            actors=proposal.get("localActors", []), objects=proposal.get("localObjects", []),
-            focus=proposal.get("immediateProblem", ""), location=envelope["location"]["name"],
-        )
-        choices, action_debug = self.map_actions(proposal["suggestedActions"], envelope, difficulty, dynamic_actions)
+        choices, action_debug = self.map_actions(proposal["suggestedActions"], envelope, difficulty, template.get("choices", []))
         debug = {
             "narrativeEnvelope": envelope, "source": source, "rawAIOutput": raw,
             "aiAttempts": attempts,

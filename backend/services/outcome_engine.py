@@ -114,15 +114,10 @@ class OutcomeEngine:
         current_questions = set(scene.get("questions", []))
         invalid_resolved = [item for item in result["questionsResolved"] if item not in current_questions]
         if invalid_resolved:
-            result["questionsResolved"] = [item for item in result["questionsResolved"] if item in current_questions]
+            errors.append("questionsResolved包含当前现场不存在的问题")
         remaining_questions = (current_questions - set(result["questionsResolved"])) | set(result["questionsAdded"])
         if result["sceneDecision"]["continueScene"] and not remaining_questions:
-            result["sceneDecision"] = {
-                "continueScene": False,
-                "reason": "程序复验发现没有尚待立即处理的问题，当前Scene自然收束。",
-                "nextFocus": "",
-            }
-            result["continueScene"] = False
+            errors.append("Scene继续但没有尚待立即处理的问题")
 
         tier = outcome["code"]
         progress = bool(result["factsAdded"] or result["questionsResolved"])
@@ -146,7 +141,7 @@ class OutcomeEngine:
         if result.get("actorsAdded") and not any(
             term in f"{scene_context}{serialized}" for term in ("接近", "来者", "脚步", "人影", "呼喊", "在场")
         ):
-            result["actorsAdded"] = []
+            errors.append("新增现场人物没有来自既有行动或现场变化")
         if re.search(r"(?:线程|Thread).{0,8}(?:阶段|Stage).{0,8}(?:推进|提升|变为|改为)", serialized, re.I):
             errors.append("AIResult试图修改Thread Stage")
         if re.search(r"(?:关系|能力|生命|伤势|紧迫度|认知度).{0,8}[+＋\-－]\s*\d+", serialized):
@@ -177,7 +172,7 @@ class OutcomeEngine:
         clue = result.get("suggestedClue")
         if clue is not None:
             if not isinstance(clue, dict) or not str(clue.get("name", "")).strip():
-                result["suggestedClue"] = None
+                errors.append("suggestedClue结构无效")
             else:
                 clue["bonus"] = max(1, min(10, int(clue.get("bonus", 5))))
                 if clue.get("ability") not in {"martial", "physique", "perception", "willpower", "agility", "social", None}:
@@ -189,8 +184,7 @@ class OutcomeEngine:
         lead = result.get("suggestedLead")
         if lead is not None:
             if not isinstance(lead, dict) or not str(lead.get("title", "")).strip() or not str(lead.get("summary", "")).strip():
-                result["suggestedLead"] = None
-                lead = None
+                errors.append("suggestedLead结构无效")
             else:
                 allowed_locations = {"pallas", "windbreak", "war_ruins", "mountain_temple"}
                 locations = list(dict.fromkeys(str(item) for item in lead.get("relatedLocations", []) if str(item) in allowed_locations))
@@ -198,14 +192,11 @@ class OutcomeEngine:
                 intent = state.get("playerIntent", {})
                 related_thread = lead.get("threadId") or director.get("threadId") or intent.get("threadId")
                 if not locations:
-                    result["suggestedLead"] = None
-                    lead = None
+                    errors.append("suggestedLead没有合理关联地点")
                 elif related_thread not in active_threads:
-                    result["suggestedLead"] = None
-                    lead = None
+                    errors.append("suggestedLead没有关联现有WorldThread")
                 elif related_thread not in {director.get("threadId"), intent.get("threadId")}:
-                    result["suggestedLead"] = None
-                    lead = None
+                    errors.append("suggestedLead与本次Scene缺少线程关联")
                 else:
                     lead["title"] = str(lead["title"]).strip()[:80]
                     lead["summary"] = str(lead["summary"]).strip()[:240]
@@ -213,8 +204,7 @@ class OutcomeEngine:
                     lead["threadId"] = related_thread
         disposition = result["leadDisposition"]
         if disposition not in {"KEEP_ACTIVE", "RESOLVED", "SUPERSEDED"}:
-            result["leadDisposition"] = "KEEP_ACTIVE"
-            disposition = "KEEP_ACTIVE"
+            errors.append("leadDisposition不是允许的生命周期状态")
         if disposition != "KEEP_ACTIVE":
             intent = state.get("playerIntent", {})
             current_lead = next((item for item in state.get("journal", []) if item.get("id") == intent.get("leadId") and item.get("trackable") and item.get("status") == "active"), None)

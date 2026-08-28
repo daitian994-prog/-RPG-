@@ -513,59 +513,8 @@ class AIService:
         except (DeepSeekError, json.JSONDecodeError, TypeError, KeyError) as exc:
             return None, str(exc)
 
-    def audit_scene_result(
-        self,
-        scene: dict[str, Any],
-        choice: dict[str, Any],
-        proposal: dict[str, Any],
-    ) -> tuple[dict[str, Any] | None, str | None]:
-        """Audit semantic continuity without granting the auditor state authority."""
-        if os.getenv("RUNETERRA_DISABLE_REMOTE_AI") == "1" or not self.remote_ai.configured:
-            return None, None
-        try:
-            response = self.remote_ai.generate(
-                system=(
-                    "你是互动RPG的独立结果审核员，不续写正文、不修改状态。"
-                    "检查candidate是否直接回应playerAction，是否承接最新Facts与Questions，是否重复已经解决的问题，"
-                    "是否凭空加入现场外人物或物件，以及SceneDecision与实际新增/解决的问题是否一致。"
-                    "严格输出JSON对象；verdict只能为PASS或REPAIR；issues为数组，每项包含field、type、reason、repairInstruction。"
-                    "只报告影响连续性、选择反馈或事实一致性的明确问题，不因个人文风偏好否决。"
-                ),
-                prompt=json.dumps({
-                    "context": {
-                        "scene": {key: scene.get(key) for key in ("round", "actors", "objects", "facts", "questions", "currentFocus", "previousActions")},
-                        "playerAction": {key: choice.get(key) for key in ("semanticAction", "goal", "approach", "actionTags", "targetTags")},
-                    },
-                    "candidate": proposal,
-                    "outputSchema": {
-                        "verdict": "PASS | REPAIR",
-                        "issues": [{"field": "字段路径", "type": "问题类型", "reason": "依据", "repairInstruction": "局部修复要求"}],
-                    },
-                }, ensure_ascii=False),
-                temperature=0.1,
-                max_tokens=500,
-            )
-            audit = self._json_object(response["text"])
-            if audit.get("verdict") not in {"PASS", "REPAIR"} or not isinstance(audit.get("issues", []), list):
-                raise ValueError("结果审核返回格式无效")
-            return {"verdict": audit["verdict"], "issues": audit.get("issues", [])}, response["text"]
-        except (DeepSeekError, json.JSONDecodeError, TypeError, KeyError, ValueError) as exc:
-            return None, str(exc)
-
     @staticmethod
-    def audit_repair_feedback(audit: dict[str, Any] | None) -> list[str]:
-        if not audit or audit.get("verdict") != "REPAIR":
-            return []
-        feedback: list[str] = []
-        for issue in audit.get("issues", []):
-            if isinstance(issue, dict):
-                instruction = str(issue.get("repairInstruction") or issue.get("reason") or "").strip()
-                if instruction:
-                    feedback.append(f"{issue.get('field', 'content')}：{instruction}")
-        return feedback[:6]
-
-    @staticmethod
-    def synthesize_scene_result(
+    def fallback_scene_result(
         scene: dict[str, Any], choice: dict[str, Any], outcome: dict[str, Any], location: dict[str, Any],
     ) -> dict[str, Any]:
         """Concrete offline result whose continuation follows the latest scene reality, not a round target."""
@@ -595,64 +544,81 @@ class AIService:
             }
 
         current_focus = str(scene.get("currentFocus") or question)
-        approach = str(choice.get("approach") or "现场核对")
-        action_tags = set(choice.get("actionTags", []))
-        if any(term in question for term in ("为什么", "为何", "来源")):
-            discovery = f"{target}的变化来自靠近{current_focus}一侧刚发生的外部作用，并非自身或自然环境造成"
-        elif "谁" in question:
-            discovery = f"{target}由一名不在场的人刚刚留下；{actor}确认其行动方向与现场其他人的来路不同"
-        elif any(term in question for term in ("哪里", "何处", "通向")):
-            discovery = f"{target}延伸的方向越过了当前现场边界，并在靠近{current_focus}的一侧留下连续痕迹"
-        elif "social" in action_tags:
-            discovery = f"{actor}说清了{target}发生变化前后的两次不同状态，并确认变化出现在{current_focus}之后"
-        elif "stealth" in action_tags:
-            discovery = f"从未惊动现场的角度可以看见，{target}的异动只在周围脚步远离后出现"
-        elif "combat" in action_tags:
-            discovery = f"{target}在受到正面压制后显露出原本藏住的一侧，那里留有刚形成的受力痕迹"
-        elif "protect" in action_tags:
-            discovery = f"移开危险后，{target}下方露出的接触面仍然潮湿，说明这项变化刚发生不久"
-        elif "spirit" in action_tags:
-            discovery = f"{target}周围的灵息并非均匀扩散，而是从靠近{current_focus}的一侧间歇涌出"
+        simple_resolution = any(term in f"{question}{goal}{target}" for term in ("遗失", "布包", "送还", "倒下的货物"))
+        trace_action = any(term in f"{action}{goal}" for term in ("痕迹", "脚印", "足迹"))
+        approaching_focus = any(term in current_focus for term in ("接近", "来者", "脚步", "现身"))
+        footprint_focus = any(term in current_focus for term in ("新鲜脚印", "足迹", "步幅", "脚印的来源"))
+        gap_focus = any(term in current_focus for term in ("缝隙", "地下", "裂缝", "冷气"))
+
+        if simple_resolution:
+            discovery = f"{actor}认出{target}属于刚刚折返寻找失物的药童，物主与遗失经过已经核实"
+            next_question = ""
+        elif approaching_focus:
+            discovery = "来者只是另一名猎人，他赶来提醒附近山道有危险，并没有追捕在场任何人"
+            next_question = ""
+        elif gap_focus:
+            discovery = "钟座下方的缝隙只通向一条废弃排水槽，冷气来自积水深处，没有东西正在向外逼近"
+            next_question = ""
+        elif footprint_focus:
+            discovery = "新鲜脚印在林缘突然折返，紧接着有一串脚步正沿同一路线向现场靠近"
+            next_question = "正在接近的人是谁？"
+        elif trace_action:
+            discovery = "铜铃附近出现一组新鲜脚印，方向与周围较旧的痕迹相反"
+            next_question = "是谁留下了这组方向相反的新鲜脚印？"
+        elif "铜钟" in target or "钟座" in target or any("铜钟" in fact for fact in scene.get("facts", [])):
+            discovery = "铜钟的震动来自钟座下方一道持续渗出冷气的狭窄缝隙"
+            next_question = "钟座下方的缝隙通向什么地方？"
+        elif any(term in f"{target}{action}{question}" for term in ("脚步", "竹林", "斥候")):
+            discovery = "靠近的两人穿着普通旅衣，但短刃制式与行进间距表明他们是诺克萨斯斥候"
+            next_question = "两名斥候正在沿山道寻找什么？"
         else:
-            discovery = f"{target}上较新的压痕覆盖在旧痕之上，边缘尚未被尘土填平，说明变化发生在现场其他痕迹之后"
-        next_question = ""
+            discovery = f"{target}靠近地面的一侧留着一组新鲜痕迹，方向与周围较旧的痕迹相反"
+            next_question = "是谁留下了这组方向相反的新鲜脚印？"
+
         code = outcome["code"]
         if code in {"critical", "success", "partial"}:
             facts_added.append(discovery)
             questions_resolved.append(question)
+            if next_question:
+                questions_added.append(next_question)
+            if footprint_focus:
+                objects_added.append("从林缘折返的新鲜脚印")
+            if approaching_focus:
+                actors_added.append("赶来的猎人")
             suggested_clue = {
-                "name": f"{target}与{current_focus}的关联", "ability": choice.get("attribute", "perception"), "bonus": 5,
+                "name": f"关于{target}的新发现", "ability": choice.get("attribute", "perception"), "bonus": 5,
                 "targetTags": list(dict.fromkeys(choice.get("targetTags", []) + [target])),
                 "actionTags": choice.get("actionTags", []),
             }
         if code == "critical":
-            second = f"{actor}还用亲眼所见补全了{target}发生变化前后的先后顺序"
+            second = f"{actor}确认这些痕迹刚刚出现，并指出了它们继续延伸的方向"
             facts_added.append(second)
             reactions.append(second)
-            narrative = f"你按“{approach}”完成了{action}。{discovery}。{actor}顺着你指出的位置重新回忆，又补全了变化发生前后的顺序。"
+            narrative = f"你沿着{target}逐寸核对，很快排除了旧痕与雨水造成的误差。{discovery}。{actor}顺着你指出的位置重新查看，立即确认了痕迹延伸的方向。"
         elif code == "success":
-            reactions.append(f"{actor}按你的判断重新核对{target}，承认这项变化能够回答眼前的问题。")
-            narrative = f"你按“{approach}”完成了{action}。{discovery}。{actor}随后亲自核对你指出的位置，原本互相冲突的现场说法终于有了一项可以确认的结论。"
+            reactions.append(f"{actor}按你的判断重新查看{target}，确认这不是原先就有的痕迹。")
+            narrative = f"你围绕“{goal}”检查{target}，把新旧痕迹逐一分开。{discovery}。{actor}随后亲自核对了你指出的位置，现场第一次有了可以继续追查的明确方向。"
         elif code == "partial":
-            risk = f"{actor}在核对{target}时意外改变了它原本的状态，余下细节正在迅速消失"
+            risk = f"{actor}核对时碰落一块碎片，声响惊动了附近尚未现身的人"
             reactions.append(risk)
-            next_question = f"怎样在{target}的剩余细节消失前完成判断？"
-            questions_added.append(next_question)
-            narrative = f"你按“{approach}”完成了{action}，并确认：{discovery}。但{risk}；你得到了答案的一部分，也必须立刻决定是否为剩余部分承担更高风险。"
+            questions_added.append("正在接近的人是谁？")
+            narrative = f"你确认了一个足以推进调查的事实：{discovery}。但在{actor}俯身核对时，一块碎片突然落下，清脆的声响传出很远；远处随即出现了短促而急促的脚步回应。"
         else:
+            if next_question:
+                questions_added.append(next_question)
             reactions.append(f"{actor}因你的动作后退一步，不再允许任何人继续靠近{target}。")
-            narrative = f"你试图通过“{action}”来{goal}，但{approach}没有取得足以支撑结论的结果。{target}最关键的状态已经发生改变，{actor}也因这次动作退开；原来的问题没有得到回答，继续靠近只会重复同一次判断。"
+            narrative = f"你试图通过{action}来{goal}，但{target}表面的新痕被松动的泥水覆盖，最关键的位置没能看清。{actor}被突然的变化惊得后退，现场随即被隔开；原来的问题没有得到答案，继续靠近也比刚才更困难。"
 
         if int(scene.get("round", 1)) >= int(scene.get("maxRounds", 4)):
             continue_scene, reason, next_focus = False, "现场达到安全轮数上限，依据已有事实收束，不再引入扩展问题。", ""
         elif code == "partial":
-            continue_scene, reason, next_focus = True, "本轮虽有进展，但现场细节正在消失，形成了必须立即处理的新决策。", next_question.rstrip("？")
+            continue_scene, reason, next_focus = True, "本轮代价制造了正在靠近的即时风险，玩家必须现在作出不同选择。", "正在接近的人"
         elif code == "failure":
             continue_scene, reason, next_focus = False, "行动没有推进核心问题，现场也没有形成可供下一轮处理的新决策空间。", ""
         elif next_question:
             continue_scene = True
             reason = "结果自然留下了一个必须在现场立即处理、并能产生新决策的问题。"
-            next_focus = next_question.rstrip("？")
+            next_focus = "正在接近的人" if "接近" in next_question else "新鲜脚印的来源" if "脚印" in next_question else "钟座下方的缝隙"
         else:
             continue_scene, reason, next_focus = False, "核心问题已经得到解释，当前没有必须立即处理的危险或互动。", ""
         return {

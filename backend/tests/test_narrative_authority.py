@@ -80,7 +80,7 @@ class NarrativeAuthorityTest(unittest.TestCase):
         self.assertTrue(all("mappingReason" in item for item in debug["accepted"]))
         self.assertTrue(all(not ({"items", "clues", "statuses"} & set(item["result"])) for item in event["choices"]))
 
-    def test_rule_claim_is_rejected_and_uses_dynamic_synthesis(self):
+    def test_rule_claim_is_rejected_and_falls_back(self):
         ai = FakeSceneAI()
         service = NarrativeAuthorityService(ai)
         original = ai.generate
@@ -93,23 +93,19 @@ class NarrativeAuthorityTest(unittest.TestCase):
 
         ai.generate = invalid
         _event, debug = service.materialize(self.envelope, self.template)
-        self.assertEqual(debug["source"], "dynamic_synthesis")
+        self.assertEqual(debug["source"], "fallback")
         self.assertTrue(debug["rejectedSceneFacts"])
 
-    def test_offline_synthesis_is_full_length_grounded_and_has_no_old_templates(self):
+    def test_offline_fallback_is_full_length_and_has_no_backend_placeholder(self):
         class OfflineAI:
             configured = False
 
         service = NarrativeAuthorityService(OfflineAI())
         event, debug = service.materialize(self.envelope, self.template)
-        self.assertEqual(debug["source"], "dynamic_synthesis")
+        self.assertEqual(debug["source"], "fallback")
         self.assertGreaterEqual(len("".join(event["text"].split())), 220)
         self.assertGreaterEqual(len(event["text"].split("\n\n")), 4)
         self.assertNotIn("已经确定的结果", json.dumps(event, ensure_ascii=False))
-        visible = json.dumps(event["choices"], ensure_ascii=False)
-        for stale in ("沿新鲜脚印追查去向", "见过哪些相似足迹", "在背风处等待留下脚印的人返回", "记下方向并离开森林"):
-            self.assertNotIn(stale, visible)
-        self.assertTrue(all(any(entity in item["text"] for entity in ("石碑", "天色将暗", "旅人")) for item in event["choices"]))
 
     def test_short_ai_scene_is_retried_then_safely_expanded(self):
         ai = FakeSceneAI()
@@ -130,7 +126,7 @@ class NarrativeAuthorityTest(unittest.TestCase):
         self.assertGreaterEqual(len("".join(event["text"].split())), 220)
         self.assertEqual(event["choices"][0]["semanticAction"], "检查木箱上的陌生划痕")
 
-    def test_next_round_synthesis_uses_latest_focus_and_not_old_action(self):
+    def test_next_round_fallback_uses_latest_focus_and_not_old_action(self):
         class OfflineAI:
             configured = False
 
@@ -144,36 +140,11 @@ class NarrativeAuthorityTest(unittest.TestCase):
         }
         actions, debug = service.next_actions(scene, self.envelope, self.template, 8)
         texts = [item["text"] for item in actions]
-        self.assertTrue(all("新鲜脚印的来源" in text or "铜铃" in text or "老猎人" in text for text in texts))
-        self.assertNotIn("沿着新鲜脚印追查它的去向", texts)
+        self.assertIn("沿着新鲜脚印追查它的去向", texts)
         self.assertNotIn("检查铜铃附近痕迹", texts)
         self.assertEqual(debug["currentFocus"], "新鲜脚印的来源")
         self.assertEqual(debug["previousActions"][0]["text"], "检查铜铃附近痕迹")
         self.assertTrue(all(not item["hint"] for item in actions))
-
-    def test_context_auditor_requests_targeted_repair_before_acceptance(self):
-        class AuditAwareAI(FakeSceneAI):
-            def __init__(self):
-                super().__init__()
-                self.audits = 0
-
-            def generate(self, **kwargs):
-                if "独立上下文审核员" in kwargs.get("system", ""):
-                    self.audits += 1
-                    verdict = "REPAIR" if self.audits == 1 else "PASS"
-                    issues = [{
-                        "field": "suggestedActions[0]", "type": "REPEATS_RESOLVED_QUESTION",
-                        "reason": "重复旧问题", "repairInstruction": "围绕当前木箱裂口重写行动",
-                    }] if verdict == "REPAIR" else []
-                    return {"text": json.dumps({"verdict": verdict, "issues": issues}, ensure_ascii=False)}
-                return super().generate(**kwargs)
-
-        ai = AuditAwareAI()
-        event, debug = NarrativeAuthorityService(ai).materialize(self.envelope, self.template)
-        self.assertEqual(debug["source"], "ai_context_repaired")
-        self.assertEqual(ai.audits, 1)
-        self.assertGreaterEqual(ai.count, 2)
-        self.assertTrue(event["choices"])
 
     def test_action_guard_rejects_same_action_tag_target_and_meaning(self):
         service = NarrativeAuthorityService(FakeSceneAI())
